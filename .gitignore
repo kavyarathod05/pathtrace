@@ -1,0 +1,32 @@
+# Go
+/backend/bin/
+*.exe
+*.test
+*.out
+/backend/pathtrace-server
+/backend/pathtrace-cron
+/backend/pathtrace-tracegen
+
+# Embedded Postgres local data / cache
+.pt-data/
+.embedded-postgres-go/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+.vercel/
+*.tsbuildinfo
+npm-debug.log*
+yarn-error.log*
+
+# Env
+.env
+.env.local
+.env*.local
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+Thumbs.db
