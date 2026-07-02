@@ -9,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/pathtrace/pathtrace/internal/alerts"
 	"github.com/pathtrace/pathtrace/internal/analytics"
 	"github.com/pathtrace/pathtrace/internal/config"
 	"github.com/pathtrace/pathtrace/internal/ingest"
@@ -43,6 +44,12 @@ func Run(ctx context.Context, cfg config.Config) error {
 
 	if cfg.AutoSeedDemo && cfg.QueryEnabled() {
 		maybeSeedDemo(ctx, cfg, store)
+	}
+
+	// Render's free tier has no cron service, so the query/all role runs
+	// retention + alert evaluation in-process on a periodic ticker.
+	if cfg.QueryEnabled() {
+		go runMaintenance(ctx, cfg, store)
 	}
 
 	hub := livetail.NewHub()
@@ -108,6 +115,39 @@ func Run(ctx context.Context, cfg config.Config) error {
 		_ = embedded.Stop()
 	}
 	return nil
+}
+
+// runMaintenance periodically deletes spans past the retention window and
+// evaluates alert rules. It replaces the standalone cron job on free tiers.
+func runMaintenance(ctx context.Context, cfg config.Config, store *postgres.Store) {
+	engine := analytics.New(store.Pool())
+	eval := alerts.New(store, engine)
+	interval := 5 * time.Minute
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	sweep := func() {
+		cutoff := time.Now().Add(-time.Duration(cfg.RetentionHrs) * time.Hour)
+		if deleted, err := store.DeleteOlderThan(ctx, cutoff); err != nil {
+			log.Printf("maintenance: retention sweep failed: %v", err)
+		} else if deleted > 0 {
+			log.Printf("maintenance: deleted %d spans older than %s", deleted, cutoff.Format(time.RFC3339))
+		}
+		for _, project := range cfg.ListProjects() {
+			if _, err := eval.EvaluateProject(ctx, project); err != nil {
+				log.Printf("maintenance: alert eval for %q failed: %v", project, err)
+			}
+		}
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			sweep()
+		}
+	}
 }
 
 func maybeSeedDemo(ctx context.Context, cfg config.Config, store *postgres.Store) {
