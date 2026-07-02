@@ -1,0 +1,82 @@
+# PathTrace deployment blueprint for Render.
+# Frontend is deployed separately on Vercel (set NEXT_PUBLIC_API_URL to this
+# service's public URL). This blueprint provisions a single all-in-one API
+# service backed by managed Postgres + Key Value, plus a retention cron.
+
+databases:
+  - name: pathtrace-db
+    plan: free
+    databaseName: pathtrace
+    user: pathtrace
+
+services:
+  # Managed Key Value (Redis-compatible) — used as the ingest buffer / live relay.
+  - type: keyvalue
+    name: pathtrace-redis
+    plan: free
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: []
+
+  # All-in-one API: OTLP ingest (HTTP + gRPC) + query + live tail.
+  - type: web
+    name: pathtrace-api
+    runtime: go
+    plan: free
+    rootDir: backend
+    buildCommand: go build -o pathtrace-server ./cmd/server
+    startCommand: ./pathtrace-server
+    healthCheckPath: /healthz
+    envVars:
+      - key: ROLE
+        value: all
+      - key: DATABASE_URL
+        fromDatabase:
+          name: pathtrace-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: pathtrace-redis
+          property: connectionString
+      - key: EMBEDDED_DB
+        value: "false"
+      - key: DEMO_PROJECT
+        value: demo
+      - key: AUTO_SEED_DEMO
+        value: "true"
+      - key: SAMPLE_RATE
+        value: "1.0"
+      - key: RETENTION_HOURS
+        value: "72"
+      - key: BATCH_SIZE
+        value: "500"
+      - key: GRPC_PORT
+        value: "4317"
+      - key: RATE_LIMIT_RPM
+        value: "600"
+      # Set to your Vercel frontend origin (e.g. https://pathtrace.vercel.app).
+      - key: CORS_ORIGIN
+        sync: false
+      # Optional multi-tenant ingest keys, format: key1:project1,key2:project2
+      - key: INGEST_KEYS
+        sync: false
+      # Advertised ingest URL shown on the Connect page (this service's URL).
+      - key: PUBLIC_URL
+        sync: false
+
+  # Retention sweep: deletes spans older than RETENTION_HOURS every 5 minutes.
+  - type: cron
+    name: pathtrace-cron
+    runtime: go
+    plan: free
+    rootDir: backend
+    schedule: "*/5 * * * *"
+    buildCommand: go build -o pathtrace-cron ./cmd/cron
+    startCommand: ./pathtrace-cron
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: pathtrace-db
+          property: connectionString
+      - key: RETENTION_HOURS
+        value: "72"
