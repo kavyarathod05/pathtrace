@@ -51,3 +51,45 @@ CREATE TABLE IF NOT EXISTS alert_events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_alert_events_fired ON alert_events (fired_at DESC);
+
+-- Saved views (shareable filter presets)
+CREATE TABLE IF NOT EXISTS saved_views (
+    id          BIGSERIAL PRIMARY KEY,
+    project_id  TEXT NOT NULL DEFAULT 'default',
+    name        TEXT NOT NULL,
+    kind        TEXT NOT NULL DEFAULT 'explore',
+    params      JSONB NOT NULL DEFAULT '{}',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_saved_views_project ON saved_views (project_id, created_at DESC);
+
+-- Notification channels for alerts
+CREATE TABLE IF NOT EXISTS notification_channels (
+    id          BIGSERIAL PRIMARY KEY,
+    project_id  TEXT NOT NULL DEFAULT 'default',
+    name        TEXT NOT NULL,
+    type        TEXT NOT NULL DEFAULT 'webhook',
+    config      JSONB NOT NULL DEFAULT '{}'
+);
+
+-- Alert rule extensions (idempotent ALTERs)
+ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS enabled BOOL NOT NULL DEFAULT true;
+ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS severity TEXT NOT NULL DEFAULT 'warning';
+ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS for_sec INT NOT NULL DEFAULT 0;
+ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS cooldown_sec INT NOT NULL DEFAULT 300;
+ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS channel_id BIGINT REFERENCES notification_channels(id) ON DELETE SET NULL;
+ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS slo_target DOUBLE PRECISION;
+ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS slo_window_sec INT;
+
+-- Stateful alert tracking
+CREATE TABLE IF NOT EXISTS alert_state (
+    rule_id         BIGINT PRIMARY KEY REFERENCES alert_rules(id) ON DELETE CASCADE,
+    state           TEXT NOT NULL DEFAULT 'ok',
+    since           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_notified   TIMESTAMPTZ
+);
+
+-- Alert event extensions
+ALTER TABLE alert_events ADD COLUMN IF NOT EXISTS state TEXT NOT NULL DEFAULT 'firing';
+ALTER TABLE alert_events ADD COLUMN IF NOT EXISTS severity TEXT NOT NULL DEFAULT 'warning';

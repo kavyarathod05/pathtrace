@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { fetchDependencies } from "@/lib/api";
 import { useProject } from "@/lib/project";
@@ -151,22 +152,23 @@ export default function ServiceMapPage() {
                 const dim = hover && !connected(n.id);
                 const errRate = n.calls ? n.errors / n.calls : 0;
                 return (
-                  <g
-                    key={n.id}
-                    className="map-node"
-                    transform={`translate(${n.x},${n.y})`}
-                    opacity={dim ? 0.25 : 1}
-                    onMouseEnter={() => setHover(n.id)}
-                    onMouseLeave={() => setHover(null)}
-                    filter={active ? "url(#glow)" : undefined}
-                    style={{ cursor: "default" }}
-                  >
-                    <rect className="body" width={NODE_W} height={NODE_H} rx={6} stroke={active ? color : undefined} strokeWidth={active ? 1.5 : 1} />
-                    <rect width={5} height={NODE_H} rx={3} fill={color} />
-                    <circle cx={14} cy={NODE_H / 2} r={4} fill={color} opacity={0.9} />
-                    <text className="title" x={24} y={21}>{n.id.length > 18 ? n.id.slice(0, 16) + "…" : n.id}</text>
-                    <text className="sub" x={24} y={38}>{n.calls.toLocaleString()} calls{n.errors ? ` · ${formatPercent(errRate)} err` : ""}</text>
-                  </g>
+                  <Link key={n.id} href={`/explore?service=${encodeURIComponent(n.id)}`}>
+                    <g
+                      className="map-node"
+                      transform={`translate(${n.x},${n.y})`}
+                      opacity={dim ? 0.25 : 1}
+                      onMouseEnter={() => setHover(n.id)}
+                      onMouseLeave={() => setHover(null)}
+                      filter={active ? "url(#glow)" : undefined}
+                      style={{ cursor: "pointer" }}
+                    >
+                      <rect className="body" width={NODE_W} height={NODE_H} rx={6} stroke={active ? color : undefined} strokeWidth={active ? 1.5 : 1} />
+                      <rect width={5} height={NODE_H} rx={3} fill={color} />
+                      <circle cx={14} cy={NODE_H / 2} r={4} fill={color} opacity={0.9} />
+                      <text className="title" x={24} y={21}>{n.id.length > 18 ? n.id.slice(0, 16) + "…" : n.id}</text>
+                      <text className="sub" x={24} y={38}>{n.calls.toLocaleString()} calls{n.errors ? ` · ${formatPercent(errRate)} err` : ""}</text>
+                    </g>
+                  </Link>
                 );
               })}
             </svg>

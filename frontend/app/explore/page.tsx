@@ -1,12 +1,33 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { fetchOperations, fetchServices, searchTraces } from "@/lib/api";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import {
+  createSavedView,
+  deleteSavedView,
+  exploreURL,
+  fetchOperations,
+  fetchSavedViews,
+  fetchServices,
+  searchTraces,
+} from "@/lib/api";
 import { useProject } from "@/lib/project";
-import type { SearchParams, TraceSummary } from "@/lib/types";
+import type { SavedView, SearchParams, TraceSummary } from "@/lib/types";
 import { formatDuration, formatTimeAgo, serviceColor, shortId } from "@/lib/format";
+
+const WINDOWS = ["15m", "1h", "6h", "24h"];
+
+function windowToStart(win: string): string {
+  const now = Date.now();
+  const mult: Record<string, number> = {
+    "15m": 15 * 60_000,
+    "1h": 60 * 60_000,
+    "6h": 6 * 60 * 60_000,
+    "24h": 24 * 60 * 60_000,
+  };
+  return new Date(now - (mult[win] ?? mult["1h"])).toISOString();
+}
 
 function DurationScatter({ traces, maxDur, onPick }: { traces: TraceSummary[]; maxDur: number; onPick: (id: string) => void }) {
   if (traces.length === 0) return null;
@@ -50,18 +71,91 @@ function DurationScatter({ traces, maxDur, onPick }: { traces: TraceSummary[]; m
   );
 }
 
-export default function ExplorePage() {
+function TimeHistogram({ traces }: { traces: TraceSummary[] }) {
+  const bars = useMemo(() => {
+    if (traces.length === 0) return [];
+    const times = traces.map((t) => new Date(t.startTime).getTime());
+    const min = Math.min(...times);
+    const max = Math.max(...times);
+    const span = Math.max(1, max - min);
+    const N = 32;
+    const buckets = Array.from({ length: N }, () => ({ count: 0, errors: 0 }));
+    for (const t of traces) {
+      const idx = Math.min(N - 1, Math.floor(((new Date(t.startTime).getTime() - min) / span) * N));
+      buckets[idx].count++;
+      if (t.errorCount > 0) buckets[idx].errors++;
+    }
+    return buckets;
+  }, [traces]);
+
+  if (bars.length === 0) return null;
+  const max = Math.max(1, ...bars.map((b) => b.count));
+
+  return (
+    <div className="panel" style={{ marginBottom: 16 }}>
+      <div className="panel-title">
+        <span>Traces over time</span>
+        <span className="hint">count per bucket · errors in red</span>
+      </div>
+      <div className="time-hist">
+        {bars.map((b, i) => (
+          <div
+            key={i}
+            className="hist-bar"
+            title={`${b.count} traces · ${b.errors} errors`}
+            style={{ height: `${(b.count / max) * 100}%` }}
+          >
+            {b.errors > 0 && (
+              <span className="hist-err" style={{ height: `${(b.errors / b.count) * 100}%` }} />
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ExploreInner() {
   const router = useRouter();
+  const search = useSearchParams();
   const { project } = useProject();
   const [services, setServices] = useState<string[]>([]);
   const [operations, setOperations] = useState<string[]>([]);
   const [form, setForm] = useState<SearchParams>({ limit: 40 });
+  const [win, setWin] = useState("1h");
   const [results, setResults] = useState<TraceSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [views, setViews] = useState<SavedView[]>([]);
+  const [viewName, setViewName] = useState("");
+
+  // Hydrate form from URL params once on mount / when the URL changes.
+  useEffect(() => {
+    const next: SearchParams = { limit: 40 };
+    const s = search.get("service");
+    const op = search.get("operation");
+    const minD = search.get("minDuration");
+    const maxD = search.get("maxDuration");
+    const tags = search.get("tags");
+    const q = search.get("q");
+    const errs = search.get("onlyErrors");
+    if (s) next.service = s;
+    if (op) next.operation = op;
+    if (minD) next.minDuration = minD;
+    if (maxD) next.maxDuration = maxD;
+    if (tags) next.tags = tags;
+    if (q) next.q = q;
+    if (errs === "true") next.onlyErrors = true;
+    const w = search.get("window");
+    if (w) setWin(w);
+    setForm(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
+
   useEffect(() => {
     fetchServices(project).then(setServices).catch((e) => setError(String(e)));
+    fetchSavedViews(project).then(setViews).catch(() => setViews([]));
   }, [project]);
 
   useEffect(() => {
@@ -72,22 +166,72 @@ export default function ExplorePage() {
     }
   }, [form.service, project]);
 
-  const run = async () => {
+  const run = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      setResults(await searchTraces(project, form));
+      const params: SearchParams = { ...form, start: windowToStart(win), end: new Date().toISOString() };
+      setResults(await searchTraces(project, params));
     } catch (e) {
       setError(String(e));
     } finally {
       setLoading(false);
     }
-  };
+  }, [form, win, project]);
 
   useEffect(() => {
     run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project]);
+
+  const syncUrl = () => {
+    const url = exploreURL(form);
+    const withWin = `${url}${url.includes("?") ? "&" : "?"}window=${win}`;
+    router.replace(withWin);
+  };
+
+  const submit = () => {
+    syncUrl();
+    run();
+  };
+
+  const saveView = async () => {
+    if (!viewName) return;
+    try {
+      const v = await createSavedView(project, {
+        name: viewName,
+        kind: "explore",
+        params: { ...form, window: win } as Record<string, unknown>,
+      });
+      setViews((prev) => [v, ...prev]);
+      setViewName("");
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const applyView = (v: SavedView) => {
+    const p = v.params as SearchParams & { window?: string };
+    setForm({
+      limit: 40,
+      service: p.service,
+      operation: p.operation,
+      minDuration: p.minDuration,
+      maxDuration: p.maxDuration,
+      tags: p.tags,
+      q: p.q,
+      onlyErrors: p.onlyErrors,
+    });
+    if (p.window) setWin(p.window);
+    const url = exploreURL(p);
+    router.replace(`${url}${url.includes("?") ? "&" : "?"}window=${p.window ?? win}`);
+    setTimeout(run, 0);
+  };
+
+  const removeView = async (id: number) => {
+    await deleteSavedView(project, id).catch(() => {});
+    setViews((prev) => prev.filter((v) => v.id !== id));
+  };
 
   const maxDur = Math.max(1, ...results.map((r) => r.durationUs));
 
@@ -96,10 +240,31 @@ export default function ExplorePage() {
       <div className="page-head">
         <div>
           <h1>Explore Traces</h1>
-          <div className="sub">Project <code>{project}</code> · search and inspect distributed traces</div>
+          <div className="sub">Project <code>{project}</code> · search with TraceQL and inspect distributed traces</div>
+        </div>
+        <div className="seg">
+          {WINDOWS.map((w) => (
+            <button key={w} type="button" className={win === w ? "on" : ""} onClick={() => { setWin(w); setTimeout(submit, 0); }}>Last {w}</button>
+          ))}
         </div>
       </div>
       <div className="page-body">
+        <div className="toolbar">
+          <div className="field grow" style={{ minWidth: 320 }}>
+            <label>TraceQL</label>
+            <input
+              className="mono"
+              placeholder={`service="payments" && duration>250ms && error=true`}
+              value={form.q ?? ""}
+              onChange={(e) => setForm({ ...form, q: e.target.value || undefined })}
+              onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+              style={{ width: "100%" }}
+            />
+          </div>
+          <div className="spacer" />
+          <button className="btn" onClick={submit} disabled={loading}>{loading ? "Searching…" : "Run query"}</button>
+        </div>
+
         <div className="toolbar">
           <div className="field">
             <label>Service</label>
@@ -117,22 +282,45 @@ export default function ExplorePage() {
           </div>
           <div className="field">
             <label>Min duration</label>
-            <input placeholder="100ms" value={form.minDuration ?? ""} onChange={(e) => setForm({ ...form, minDuration: e.target.value || undefined })} style={{ minWidth: 110 }} />
+            <input placeholder="100ms" value={form.minDuration ?? ""} onChange={(e) => setForm({ ...form, minDuration: e.target.value || undefined })} style={{ minWidth: 100 }} />
+          </div>
+          <div className="field">
+            <label>Max duration</label>
+            <input placeholder="2s" value={form.maxDuration ?? ""} onChange={(e) => setForm({ ...form, maxDuration: e.target.value || undefined })} style={{ minWidth: 100 }} />
           </div>
           <div className="field">
             <label>Tags</label>
-            <input placeholder="http.route=POST /checkout" value={form.tags ?? ""} onChange={(e) => setForm({ ...form, tags: e.target.value || undefined })} style={{ minWidth: 220 }} />
+            <input placeholder="http.route=POST /checkout" value={form.tags ?? ""} onChange={(e) => setForm({ ...form, tags: e.target.value || undefined })} style={{ minWidth: 200 }} />
           </div>
           <label className="check">
             <input type="checkbox" checked={!!form.onlyErrors} onChange={(e) => setForm({ ...form, onlyErrors: e.target.checked })} />
             Errors only
           </label>
           <div className="spacer" />
-          <button className="btn" onClick={run} disabled={loading}>{loading ? "Searching…" : "Search"}</button>
+          <button className="btn ghost" onClick={submit} disabled={loading}>Apply filters</button>
+        </div>
+
+        <div className="toolbar">
+          <div className="field grow">
+            <label>Save current view</label>
+            <input placeholder="Slow payments" value={viewName} onChange={(e) => setViewName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") saveView(); }} />
+          </div>
+          <button className="btn ghost" onClick={saveView} disabled={!viewName}>Save view</button>
+          <div className="spacer" />
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+            {views.length === 0 && <span className="hint">No saved views yet</span>}
+            {views.map((v) => (
+              <span key={v.id} className="chip" style={{ cursor: "pointer" }}>
+                <span onClick={() => applyView(v)}>{v.name}</span>
+                <span style={{ marginLeft: 4, color: "var(--err)", cursor: "pointer" }} onClick={() => removeView(v.id)} title="Delete view">×</span>
+              </span>
+            ))}
+          </div>
         </div>
 
         {error && <div className="err-note" style={{ marginBottom: 16 }}>{error}</div>}
 
+        {results.length > 0 && <TimeHistogram traces={results} />}
         {results.length > 0 && (
           <DurationScatter traces={results} maxDur={maxDur} onPick={(id) => router.push(`/traces/${id}`)} />
         )}
@@ -180,5 +368,13 @@ export default function ExplorePage() {
         </div>
       </div>
     </>
+  );
+}
+
+export default function ExplorePage() {
+  return (
+    <Suspense fallback={<div className="page-body"><div className="skeleton" style={{ height: 120 }} /></div>}>
+      <ExploreInner />
+    </Suspense>
   );
 }

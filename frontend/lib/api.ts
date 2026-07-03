@@ -3,8 +3,13 @@ import type {
   AlertRule,
   ConnectInfo,
   DependencyEdge,
+  ErrorGroup,
   FacetValue,
+  FlameNode,
   Hotspot,
+  NotificationChannel,
+  REDSeries,
+  SavedView,
   SearchParams,
   ServiceHealth,
   Trace,
@@ -32,6 +37,17 @@ async function getJSON<T>(path: string): Promise<T> {
     const text = await res.text().catch(() => res.statusText);
     throw new Error(`${res.status}: ${text}`);
   }
+  return res.json() as Promise<T>;
+}
+
+async function sendJSON<T>(path: string, method: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) throw new Error(await res.text());
+  if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
 
@@ -65,6 +81,9 @@ export async function searchTraces(project: string, params: SearchParams): Promi
       maxDuration: params.maxDuration,
       onlyErrors: params.onlyErrors ? "true" : undefined,
       tags: params.tags,
+      q: params.q,
+      start: params.start,
+      end: params.end,
       limit: params.limit ?? 40,
     })}`,
   );
@@ -95,6 +114,47 @@ export async function fetchFacets(project: string, tag: string, window = "1h"): 
   return data.facets ?? [];
 }
 
+export async function fetchRED(
+  project: string,
+  service: string,
+  operation?: string,
+  window = "1h",
+  step = "1m",
+): Promise<REDSeries> {
+  return getJSON<REDSeries>(`/api/metrics/red${qs(project, { service, operation, window, step })}`);
+}
+
+export async function fetchErrorGroups(project: string, window = "1h"): Promise<ErrorGroup[]> {
+  const data = await getJSON<{ groups: ErrorGroup[] }>(`/api/errors${qs(project, { window })}`);
+  return data.groups ?? [];
+}
+
+export async function fetchErrorGroup(project: string, fingerprint: string, window = "1h"): Promise<ErrorGroup> {
+  return getJSON<ErrorGroup>(`/api/errors/${encodeURIComponent(fingerprint)}${qs(project, { window })}`);
+}
+
+export async function fetchFlameGraph(
+  project: string,
+  service: string,
+  operation?: string,
+  window = "1h",
+): Promise<FlameNode> {
+  return getJSON<FlameNode>(`/api/flamegraph${qs(project, { service, operation, window })}`);
+}
+
+export async function fetchSavedViews(project: string): Promise<SavedView[]> {
+  const data = await getJSON<{ views: SavedView[] }>(`/api/views${qs(project)}`);
+  return data.views ?? [];
+}
+
+export async function createSavedView(project: string, view: Partial<SavedView>): Promise<SavedView> {
+  return sendJSON<SavedView>(`/api/views${qs(project)}`, "POST", view);
+}
+
+export async function deleteSavedView(project: string, id: number): Promise<void> {
+  await sendJSON<void>(`/api/views/${id}${qs(project)}`, "DELETE");
+}
+
 export async function fetchAlertRules(project: string): Promise<AlertRule[]> {
   const data = await getJSON<{ rules: AlertRule[] }>(`/api/alerts${qs(project)}`);
   return data.rules ?? [];
@@ -106,20 +166,48 @@ export async function fetchAlertEvents(project: string): Promise<AlertEvent[]> {
 }
 
 export async function createAlertRule(project: string, rule: Partial<AlertRule>): Promise<AlertRule> {
-  const res = await fetch(`${API_BASE}/api/alerts${qs(project)}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(rule),
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+  return sendJSON<AlertRule>(`/api/alerts${qs(project)}`, "POST", rule);
+}
+
+export async function updateAlertRule(project: string, id: number, patch: Partial<AlertRule>): Promise<AlertRule> {
+  return sendJSON<AlertRule>(`/api/alerts/${id}${qs(project)}`, "PATCH", patch);
 }
 
 export async function deleteAlertRule(project: string, id: number): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/alerts/${id}${qs(project)}`, { method: "DELETE" });
-  if (!res.ok) throw new Error(await res.text());
+  await sendJSON<void>(`/api/alerts/${id}${qs(project)}`, "DELETE");
+}
+
+export async function fetchChannels(project: string): Promise<NotificationChannel[]> {
+  const data = await getJSON<{ channels: NotificationChannel[] }>(`/api/alerts/channels${qs(project)}`);
+  return data.channels ?? [];
+}
+
+export async function createChannel(project: string, ch: Partial<NotificationChannel>): Promise<NotificationChannel> {
+  return sendJSON<NotificationChannel>(`/api/alerts/channels${qs(project)}`, "POST", ch);
+}
+
+export async function deleteChannel(project: string, id: number): Promise<void> {
+  await sendJSON<void>(`/api/alerts/channels/${id}${qs(project)}`, "DELETE");
+}
+
+export async function testChannel(project: string, id: number): Promise<void> {
+  await sendJSON(`/api/alerts/channels/${id}/test${qs(project)}`, "POST");
 }
 
 export function liveTailURL(project: string): string {
   return `${API_BASE}/api/live${qs(project)}`;
+}
+
+export function exploreURL(params: SearchParams, project?: string): string {
+  const q = new URLSearchParams();
+  if (project) q.set("project", project);
+  if (params.service) q.set("service", params.service);
+  if (params.operation) q.set("operation", params.operation);
+  if (params.minDuration) q.set("minDuration", params.minDuration);
+  if (params.maxDuration) q.set("maxDuration", params.maxDuration);
+  if (params.tags) q.set("tags", params.tags);
+  if (params.q) q.set("q", params.q);
+  if (params.onlyErrors) q.set("onlyErrors", "true");
+  const s = q.toString();
+  return `/explore${s ? `?${s}` : ""}`;
 }

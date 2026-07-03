@@ -106,17 +106,24 @@ type FacetValue struct {
 
 // AlertRule defines an SLO/threshold that the evaluator checks on a schedule.
 type AlertRule struct {
-	ID        int64   `json:"id"`
-	ProjectID string  `json:"projectId"`
-	Name      string  `json:"name"`
-	Service   string  `json:"service,omitempty"`
-	Metric    string  `json:"metric"` // p95_latency_us | error_rate
-	Op        string  `json:"op"`     // > | <
-	Threshold float64 `json:"threshold"`
-	WindowSec int     `json:"windowSec"`
+	ID           int64   `json:"id"`
+	ProjectID    string  `json:"projectId"`
+	Name         string  `json:"name"`
+	Service      string  `json:"service,omitempty"`
+	Metric       string  `json:"metric"` // p95_latency_us | error_rate | slo_burn_rate
+	Op           string  `json:"op"`     // > | < | >= | <=
+	Threshold    float64 `json:"threshold"`
+	WindowSec    int     `json:"windowSec"`
+	Enabled      bool    `json:"enabled"`
+	Severity     string  `json:"severity,omitempty"` // info | warning | critical
+	ForSec       int     `json:"forSec"`
+	CooldownSec  int     `json:"cooldownSec"`
+	ChannelID    *int64  `json:"channelId,omitempty"`
+	SLOTarget    float64 `json:"sloTarget,omitempty"`
+	SLOWindowSec int     `json:"sloWindowSec,omitempty"`
 }
 
-// AlertEvent is a recorded firing of an alert rule.
+// AlertEvent is a recorded firing or resolution of an alert rule.
 type AlertEvent struct {
 	ID        int64     `json:"id"`
 	RuleID    int64     `json:"ruleId"`
@@ -126,4 +133,74 @@ type AlertEvent struct {
 	FiredAt   time.Time `json:"firedAt"`
 	Value     float64   `json:"value"`
 	Threshold float64   `json:"threshold"`
+	State     string    `json:"state"`    // firing | resolved
+	Severity  string    `json:"severity"` // info | warning | critical
+}
+
+// NotificationChannel delivers alert notifications (webhook or Slack).
+type NotificationChannel struct {
+	ID        int64          `json:"id"`
+	ProjectID string         `json:"projectId"`
+	Name      string         `json:"name"`
+	Type      string         `json:"type"` // webhook | slack
+	Config    map[string]any `json:"config"`
+}
+
+// AlertState tracks the current lifecycle state of a rule.
+type AlertState struct {
+	RuleID       int64      `json:"ruleId"`
+	State        string     `json:"state"` // ok | pending | firing
+	Since        time.Time  `json:"since"`
+	LastNotified *time.Time `json:"lastNotified,omitempty"`
+}
+
+// SavedView is a named, shareable filter preset.
+type SavedView struct {
+	ID        int64          `json:"id"`
+	ProjectID string         `json:"projectId"`
+	Name      string         `json:"name"`
+	Kind      string         `json:"kind"` // explore | monitor | errors
+	Params    map[string]any `json:"params"`
+	CreatedAt time.Time      `json:"createdAt"`
+}
+
+// TimeSeriesPoint is one bucket in a RED metrics time series.
+type TimeSeriesPoint struct {
+	Time       time.Time `json:"time"`
+	Count      int64     `json:"count"`
+	ErrorCount int64     `json:"errorCount"`
+	P50US      float64   `json:"p50Us"`
+	P95US      float64   `json:"p95Us"`
+	P99US      float64   `json:"p99Us"`
+}
+
+// REDSeries is rate/errors/duration metrics over time.
+type REDSeries struct {
+	Service   string            `json:"service"`
+	Operation string            `json:"operation,omitempty"`
+	Step      string            `json:"step"`
+	Points    []TimeSeriesPoint `json:"points"`
+}
+
+// ErrorGroup aggregates error spans into an issue.
+type ErrorGroup struct {
+	Fingerprint  string    `json:"fingerprint"`
+	Service      string    `json:"service"`
+	Operation    string    `json:"operation"`
+	ErrorType    string    `json:"errorType"`
+	Message      string    `json:"message,omitempty"`
+	Count        int64     `json:"count"`
+	FirstSeen    time.Time `json:"firstSeen"`
+	LastSeen     time.Time `json:"lastSeen"`
+	SampleTraces []string  `json:"sampleTraces"`
+}
+
+// FlameNode is one node in an aggregated flame graph.
+type FlameNode struct {
+	Name     string      `json:"name"`
+	Service  string      `json:"service"`
+	TotalUS  int64       `json:"totalUs"`
+	SelfUS   int64       `json:"selfUs"`
+	Count    int64       `json:"count"`
+	Children []FlameNode `json:"children,omitempty"`
 }

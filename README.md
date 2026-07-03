@@ -29,14 +29,18 @@ broke** instead of digging through scattered logs.
 |------|---------|
 | Ingest | OTLP/HTTP + gRPC trace ingestion, per-project API keys, rate limiting, probabilistic head sampling |
 | Demo | Public **demo** project auto-seeded on startup — no login required for interviewers |
-| Search | Filter traces by service, operation, tag, duration, error status, time |
-| Trace view | Waterfall timeline, span tree, span detail (tags/events/refs), **critical-path** highlighting, **trace diff** |
+| Search | Filter traces by service, operation, tag, duration, error status, time; **TraceQL** query DSL |
+| Trace view | Enhanced waterfall (minimap, zoom, crosshair), span tree, span detail, **critical-path** highlighting, **trace diff** |
 | Live Tail | Real-time span stream over Server-Sent Events |
+| Monitor | **RED metrics** (rate, errors, duration) with latency percentile charts |
 | Service Health | p50 / p95 / p99 latency, error rate, throughput per service |
-| Service Map | Interactive service-to-service dependency graph |
-| Facets | Tag value explorer |
+| Errors | **Error groups** with fingerprinting, drill-in panel, sample trace links |
+| Flame Graph | Aggregated self-time flame graph with click-to-zoom |
+| Service Map | Interactive service-to-service dependency graph (click nodes → explore) |
+| Facets | Tag value explorer with cross-links to trace search |
 | Hotspots | Operations ranked by error count/rate |
-| Alerts | SLO/threshold rules evaluated on a schedule, with a firing feed |
+| Alerts | SLO/threshold rules (incl. **SLO burn rate**), notification **channels**, firing/resolved feed, enable toggle |
+| Saved views | Persist and restore explore filter presets |
 | Connect | Copy-paste OTLP setup guide with endpoint + API key info |
 
 ---

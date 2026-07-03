@@ -81,6 +81,13 @@ export interface AlertRule {
   op: string;
   threshold: number;
   windowSec: number;
+  enabled: boolean;
+  severity?: string;
+  forSec?: number;
+  cooldownSec?: number;
+  channelId?: number;
+  sloTarget?: number;
+  sloWindowSec?: number;
 }
 
 export interface AlertEvent {
@@ -92,6 +99,62 @@ export interface AlertEvent {
   firedAt: string;
   value: number;
   threshold: number;
+  state: string;
+  severity: string;
+}
+
+export interface NotificationChannel {
+  id: number;
+  projectId: string;
+  name: string;
+  type: string;
+  config: Record<string, string>;
+}
+
+export interface SavedView {
+  id: number;
+  projectId: string;
+  name: string;
+  kind: string;
+  params: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface TimeSeriesPoint {
+  time: string;
+  count: number;
+  errorCount: number;
+  p50Us: number;
+  p95Us: number;
+  p99Us: number;
+}
+
+export interface REDSeries {
+  service: string;
+  operation?: string;
+  step: string;
+  points: TimeSeriesPoint[];
+}
+
+export interface ErrorGroup {
+  fingerprint: string;
+  service: string;
+  operation: string;
+  errorType: string;
+  message?: string;
+  count: number;
+  firstSeen: string;
+  lastSeen: string;
+  sampleTraces: string[];
+}
+
+export interface FlameNode {
+  name: string;
+  service: string;
+  totalUs: number;
+  selfUs: number;
+  count: number;
+  children?: FlameNode[];
 }
 
 export interface SearchParams {
@@ -101,6 +164,9 @@ export interface SearchParams {
   maxDuration?: string;
   onlyErrors?: boolean;
   tags?: string;
+  q?: string;
+  start?: string;
+  end?: string;
   limit?: number;
 }
 

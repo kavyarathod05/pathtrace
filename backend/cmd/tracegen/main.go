@@ -77,6 +77,24 @@ func topology() opSpec {
 	}
 }
 
+var deploymentVersions = map[string]string{
+	"api-gateway":     "v2.4.1",
+	"checkout":        "v1.8.0",
+	"inventory":       "v3.1.2",
+	"payments":        "v2.0.5",
+	"stripe-adapter":  "v1.2.0",
+	"notifications":   "v1.5.3",
+	"postgres":        "v14.2",
+}
+
+var exceptionTypes = []string{
+	"TimeoutException",
+	"PaymentDeclined",
+	"InventoryConflict",
+	"UpstreamError",
+	"ConnectionReset",
+}
+
 // ---- OTLP building ----
 
 func buildTrace(rng *mrand.Rand, start time.Time) otlpRequest {
@@ -87,11 +105,15 @@ func buildTrace(rng *mrand.Rand, start time.Time) otlpRequest {
 
 	var resourceSpans []otlpResourceSpans
 	for svc, spans := range byService {
+		attrs := []otlpKeyValue{
+			kvStr("service.name", svc),
+			kvStr("deployment.environment", "demo"),
+		}
+		if ver, ok := deploymentVersions[svc]; ok {
+			attrs = append(attrs, kvStr("deployment.version", ver))
+		}
 		resourceSpans = append(resourceSpans, otlpResourceSpans{
-			Resource: otlpResource{Attributes: []otlpKeyValue{
-				kvStr("service.name", svc),
-				kvStr("deployment.environment", "demo"),
-			}},
+			Resource: otlpResource{Attributes: attrs},
 			ScopeSpans: []otlpScopeSpans{{Spans: spans}},
 		})
 	}
@@ -126,7 +148,11 @@ func buildSpan(rng *mrand.Rand, traceID, parentID string, spec opSpec, start tim
 	}
 	if isError {
 		status = otlpStatus{Code: 2, Message: "operation failed"}
-		attrs = append(attrs, kvStr("error.type", "UpstreamError"))
+		exType := exceptionTypes[rng.Intn(len(exceptionTypes))]
+		attrs = append(attrs,
+			kvStr("error.type", "UpstreamError"),
+			kvStr("exception.type", exType),
+		)
 	}
 
 	span := otlpSpan{
@@ -141,10 +167,14 @@ func buildSpan(rng *mrand.Rand, traceID, parentID string, spec opSpec, start tim
 		Status:            status,
 	}
 	if isError {
+		exType := exceptionTypes[rng.Intn(len(exceptionTypes))]
 		span.Events = []otlpEvent{{
 			TimeUnixNano: fmt.Sprintf("%d", start.Add(self).UnixNano()),
 			Name:         "exception",
-			Attributes:   []otlpKeyValue{kvStr("exception.message", "operation failed")},
+			Attributes: []otlpKeyValue{
+				kvStr("exception.message", "operation failed"),
+				kvStr("exception.type", exType),
+			},
 		}}
 	}
 	out[spec.service] = append(out[spec.service], span)

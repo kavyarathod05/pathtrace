@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/pathtrace/pathtrace/internal/analytics"
+	"github.com/pathtrace/pathtrace/internal/alerts"
 	"github.com/pathtrace/pathtrace/internal/config"
 	"github.com/pathtrace/pathtrace/internal/ingest"
 	"github.com/pathtrace/pathtrace/internal/livetail"
@@ -18,6 +19,7 @@ import (
 	"github.com/pathtrace/pathtrace/internal/model"
 	"github.com/pathtrace/pathtrace/internal/ratelimit"
 	"github.com/pathtrace/pathtrace/internal/storage/postgres"
+	"github.com/pathtrace/pathtrace/internal/query/traceql"
 )
 
 // API wires the HTTP handlers to their dependencies.
@@ -57,10 +59,22 @@ func (a *API) Handler() http.Handler {
 		mux.HandleFunc("GET /api/health/services", a.handleServiceHealth)
 		mux.HandleFunc("GET /api/hotspots", a.handleHotspots)
 		mux.HandleFunc("GET /api/facets", a.handleFacets)
+		mux.HandleFunc("GET /api/metrics/red", a.handleRED)
+		mux.HandleFunc("GET /api/errors", a.handleErrorGroups)
+		mux.HandleFunc("GET /api/errors/{fingerprint}", a.handleErrorGroupDetail)
+		mux.HandleFunc("GET /api/flamegraph", a.handleFlameGraph)
+		mux.HandleFunc("GET /api/views", a.handleListViews)
+		mux.HandleFunc("POST /api/views", a.handleCreateView)
+		mux.HandleFunc("DELETE /api/views/{id}", a.handleDeleteView)
 		mux.HandleFunc("GET /api/alerts", a.handleListAlerts)
 		mux.HandleFunc("POST /api/alerts", a.handleCreateAlert)
+		mux.HandleFunc("PATCH /api/alerts/{id}", a.handleUpdateAlert)
 		mux.HandleFunc("DELETE /api/alerts/{id}", a.handleDeleteAlert)
 		mux.HandleFunc("GET /api/alerts/events", a.handleAlertEvents)
+		mux.HandleFunc("GET /api/alerts/channels", a.handleListChannels)
+		mux.HandleFunc("POST /api/alerts/channels", a.handleCreateChannel)
+		mux.HandleFunc("DELETE /api/alerts/channels/{id}", a.handleDeleteChannel)
+		mux.HandleFunc("POST /api/alerts/channels/{id}/test", a.handleTestChannel)
 		mux.HandleFunc("GET /api/live", a.handleLiveTail)
 	}
 
@@ -72,7 +86,7 @@ func (a *API) Handler() http.Handler {
 func (a *API) withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", a.cfg.CORSOrigin)
-		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type,x-pathtrace-key")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -111,6 +125,20 @@ func parseWindow(r *http.Request, def time.Duration) time.Duration {
 		return d
 	}
 	// Allow bare seconds.
+	if n, err := strconv.Atoi(raw); err == nil {
+		return time.Duration(n) * time.Second
+	}
+	return def
+}
+
+func parseStep(r *http.Request, def time.Duration) time.Duration {
+	raw := r.URL.Query().Get("step")
+	if raw == "" {
+		return def
+	}
+	if d, err := time.ParseDuration(raw); err == nil {
+		return d
+	}
 	if n, err := strconv.Atoi(raw); err == nil {
 		return time.Duration(n) * time.Second
 	}
@@ -243,6 +271,15 @@ func (a *API) handleSearch(w http.ResponseWriter, r *http.Request) {
 			tq.End = t
 		}
 	}
+	if rawQ := q.Get("q"); rawQ != "" {
+		parsed, err := traceql.Parse(rawQ, tq)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "invalid query: "+err.Error())
+			return
+		}
+		tq = parsed
+		tq.ProjectID = a.project(r)
+	}
 	// Default to the last hour if no time range is given.
 	if tq.Start.IsZero() && tq.End.IsZero() {
 		tq.Start = time.Now().Add(-1 * time.Hour)
@@ -340,6 +377,16 @@ func (a *API) handleCreateAlert(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "name, metric and op are required")
 		return
 	}
+	if !rule.Enabled && rule.Name != "" {
+		// Default new rules to enabled when not explicitly set false via JSON.
+		rule.Enabled = true
+	}
+	if rule.Severity == "" {
+		rule.Severity = "warning"
+	}
+	if rule.CooldownSec <= 0 {
+		rule.CooldownSec = 300
+	}
 	id, err := a.store.CreateAlertRule(r.Context(), rule)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -347,6 +394,60 @@ func (a *API) handleCreateAlert(w http.ResponseWriter, r *http.Request) {
 	}
 	rule.ID = id
 	writeJSON(w, http.StatusCreated, rule)
+}
+
+func (a *API) handleUpdateAlert(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	var patch model.AlertRule
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&patch); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	existing, err := a.store.GetAlertRule(r.Context(), a.project(r), id)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "rule not found")
+		return
+	}
+	if patch.Name != "" {
+		existing.Name = patch.Name
+	}
+	if patch.Service != "" {
+		existing.Service = patch.Service
+	}
+	if patch.Metric != "" {
+		existing.Metric = patch.Metric
+	}
+	if patch.Op != "" {
+		existing.Op = patch.Op
+	}
+	if patch.Threshold != 0 {
+		existing.Threshold = patch.Threshold
+	}
+	if patch.WindowSec > 0 {
+		existing.WindowSec = patch.WindowSec
+	}
+	existing.Enabled = patch.Enabled
+	if patch.Severity != "" {
+		existing.Severity = patch.Severity
+	}
+	if patch.ForSec >= 0 {
+		existing.ForSec = patch.ForSec
+	}
+	if patch.CooldownSec > 0 {
+		existing.CooldownSec = patch.CooldownSec
+	}
+	if patch.ChannelID != nil {
+		existing.ChannelID = patch.ChannelID
+	}
+	if err := a.store.UpdateAlertRule(r.Context(), *existing); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, existing)
 }
 
 func (a *API) handleDeleteAlert(w http.ResponseWriter, r *http.Request) {
@@ -369,6 +470,153 @@ func (a *API) handleAlertEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"events": events})
+}
+
+func (a *API) handleRED(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	series, err := a.engine.RED(r.Context(), a.project(r), q.Get("service"), q.Get("operation"),
+		parseWindow(r, time.Hour), parseStep(r, time.Minute))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, series)
+}
+
+func (a *API) handleErrorGroups(w http.ResponseWriter, r *http.Request) {
+	groups, err := a.engine.ErrorGroups(r.Context(), a.project(r), parseWindow(r, time.Hour),
+		atoiDefault(r.URL.Query().Get("limit"), 30))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"groups": groups})
+}
+
+func (a *API) handleErrorGroupDetail(w http.ResponseWriter, r *http.Request) {
+	fp := r.PathValue("fingerprint")
+	g, err := a.engine.ErrorGroupDetail(r.Context(), a.project(r), fp, parseWindow(r, time.Hour), 20)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "group not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, g)
+}
+
+func (a *API) handleFlameGraph(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	root, err := a.engine.FlameGraph(r.Context(), a.project(r), q.Get("service"), q.Get("operation"),
+		parseWindow(r, time.Hour), atoiDefault(q.Get("limit"), 30))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, root)
+}
+
+func (a *API) handleListViews(w http.ResponseWriter, r *http.Request) {
+	views, err := a.store.ListSavedViews(r.Context(), a.project(r))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"views": views})
+}
+
+func (a *API) handleCreateView(w http.ResponseWriter, r *http.Request) {
+	var v model.SavedView
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&v); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	v.ProjectID = a.project(r)
+	if v.Name == "" {
+		writeErr(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	id, err := a.store.CreateSavedView(r.Context(), v)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	v.ID = id
+	v.CreatedAt = time.Now()
+	writeJSON(w, http.StatusCreated, v)
+}
+
+func (a *API) handleDeleteView(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	if err := a.store.DeleteSavedView(r.Context(), a.project(r), id); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *API) handleListChannels(w http.ResponseWriter, r *http.Request) {
+	channels, err := a.store.ListNotificationChannels(r.Context(), a.project(r))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"channels": channels})
+}
+
+func (a *API) handleCreateChannel(w http.ResponseWriter, r *http.Request) {
+	var ch model.NotificationChannel
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&ch); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	ch.ProjectID = a.project(r)
+	if ch.Name == "" {
+		writeErr(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	id, err := a.store.CreateNotificationChannel(r.Context(), ch)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ch.ID = id
+	writeJSON(w, http.StatusCreated, ch)
+}
+
+func (a *API) handleDeleteChannel(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	if err := a.store.DeleteNotificationChannel(r.Context(), a.project(r), id); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *API) handleTestChannel(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	ch, err := a.store.GetNotificationChannel(r.Context(), a.project(r), id)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "channel not found")
+		return
+	}
+	sender := alerts.NewSender()
+	testRule := model.AlertRule{Name: "Test alert", Metric: "error_rate", Severity: "info", Threshold: 0.05}
+	if err := sender.Send(r.Context(), ch, testRule, "firing", 0.1); err != nil {
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "sent"})
 }
 
 func (a *API) handleLiveTail(w http.ResponseWriter, r *http.Request) {

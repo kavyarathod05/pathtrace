@@ -7,6 +7,7 @@ import { useProject } from "@/lib/project";
 import type { Span, Trace } from "@/lib/types";
 import { buildLayout } from "@/lib/trace";
 import { formatDuration, serviceColor } from "@/lib/format";
+import { Waterfall } from "@/components/Waterfall";
 
 export default function TracePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -38,28 +39,6 @@ export default function TracePage({ params }: { params: Promise<{ id: string }> 
     return m;
   }, [layout]);
 
-  const visibleRows = useMemo(() => {
-    if (!layout) return [];
-    const hidden = new Set<string>();
-    const hideDesc = (spanId: string) => {
-      for (const c of childrenOf.get(spanId) ?? []) {
-        hidden.add(c);
-        hideDesc(c);
-      }
-    };
-    for (const id of collapsed) hideDesc(id);
-
-    return layout.rows.filter((r) => {
-      let p = r.span.parentSpanId;
-      while (p) {
-        if (hidden.has(p)) return false;
-        const parent = layout.rows.find((x) => x.span.spanId === p);
-        p = parent?.span.parentSpanId;
-      }
-      return !hidden.has(r.span.spanId);
-    });
-  }, [layout, collapsed, childrenOf]);
-
   const toggle = (spanId: string) => {
     setCollapsed((prev) => {
       const next = new Set(prev);
@@ -87,7 +66,6 @@ export default function TracePage({ params }: { params: Promise<{ id: string }> 
   }
 
   const s = trace.summary;
-  const ticks = [0, 0.25, 0.5, 0.75, 1];
 
   return (
     <>
@@ -114,82 +92,19 @@ export default function TracePage({ params }: { params: Promise<{ id: string }> 
 
         <div className="toprow">
           <Link href="/explore" className="btn ghost" style={{ height: 30, padding: "0 12px" }}>← Explore</Link>
-          <span className="hint">Click a span to inspect · collapse branches with ▾ · accent border = critical path</span>
+          <span className="hint">Click a span to inspect · collapse branches with ▾ · Ctrl+scroll to zoom</span>
         </div>
 
         <div className="row-gap">
           <div className="grow">
-            <div className="wf">
-              <div className="wf-head">
-                <div className="wf-head-label">
-                  <span>Span</span>
-                  <span className="hint">{visibleRows.length} visible</span>
-                </div>
-                <div className="wf-head-axis">
-                  {ticks.map((t) => (
-                    <div key={t} className="wf-tick" style={{ left: `${t * 100}%` }}>
-                      <div className="rule" />
-                      <span className="lbl">{formatDuration(layout.totalUs * t)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="wf-body">
-                <div className="wf-gridlines">
-                  {ticks.map((t) => (
-                    <div key={t} className="gl" style={{ left: `${t * 100}%` }} />
-                  ))}
-                </div>
-
-                {visibleRows.map(({ span, depth, offsetUs, onCriticalPath }) => {
-                  const leftPct = (offsetUs / layout.totalUs) * 100;
-                  const widthPct = Math.max(0.35, (span.durationUs / layout.totalUs) * 100);
-                  const isErr = span.statusCode === "ERROR";
-                  const kids = childrenOf.get(span.spanId) ?? [];
-                  const isCollapsed = collapsed.has(span.spanId);
-                  const color = serviceColor(span.serviceName);
-
-                  return (
-                    <div
-                      key={span.spanId}
-                      className={`wf-row${selected?.spanId === span.spanId ? " selected" : ""}`}
-                      onClick={() => setSelected(span)}
-                    >
-                      <div className="wf-label" style={{ paddingLeft: 8 + depth * 16 }}>
-                        <span className="strip" style={{ background: color, opacity: onCriticalPath ? 1 : 0.45 }} />
-                        <button
-                          type="button"
-                          className={`wf-caret${kids.length ? "" : " leaf"}`}
-                          onClick={(e) => { e.stopPropagation(); if (kids.length) toggle(span.spanId); }}
-                          aria-label={isCollapsed ? "Expand" : "Collapse"}
-                        >
-                          {kids.length ? (isCollapsed ? "▸" : "▾") : ""}
-                        </button>
-                        <span className="op">{span.operationName}</span>
-                        <span className="svc">· {span.serviceName}</span>
-                        {onCriticalPath && <span className="crit-dot" title="Critical path" />}
-                        {kids.length > 0 && <span className="kids">({kids.length})</span>}
-                      </div>
-                      <div className="wf-track">
-                        <div
-                          className={`wf-bar${isErr ? " err" : ""}`}
-                          style={{
-                            left: `${leftPct}%`,
-                            width: `${widthPct}%`,
-                            background: color,
-                            opacity: onCriticalPath ? 0.95 : 0.5,
-                          }}
-                        />
-                        <span className="wf-dur" style={{ left: `calc(${Math.min(leftPct + widthPct, 90)}% + 8px)` }}>
-                          {formatDuration(span.durationUs)}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+            <Waterfall
+              layout={layout}
+              selectedId={selected?.spanId}
+              onSelect={setSelected}
+              collapsed={collapsed}
+              onToggle={toggle}
+              childrenOf={childrenOf}
+            />
           </div>
 
           <div style={{ width: 360, flex: "none" }}>
