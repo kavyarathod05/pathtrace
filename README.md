@@ -132,9 +132,10 @@ DATABASE_URL="postgres://pathtrace:pathtrace@localhost:55432/pathtrace?sslmode=d
 
 - **Backend → Render:** the [`render.yaml`](render.yaml) blueprint provisions the
   Go web service, a free Postgres, and the cron job.
-- **Frontend → Vercel:** deploy the `frontend/` directory and set
-  `NEXT_PUBLIC_API_URL` to your Render API URL. Set `CORS_ORIGIN` on the Render
-  service to your Vercel URL.
+- **Frontend → Vercel:** the root [`vercel.json`](vercel.json) builds the app
+  from `frontend/`, so deploying the repo root works without changing the Vercel
+  Root Directory. Set `NEXT_PUBLIC_API_URL` to your Render API URL, and set
+  `CORS_ORIGIN` on the Render service to your Vercel URL.
 
 See [implementation.md](implementation.md) for the full deployment guide and
 free-tier notes.
