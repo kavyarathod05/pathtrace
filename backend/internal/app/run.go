@@ -138,6 +138,9 @@ func runMaintenance(ctx context.Context, cfg config.Config, store *postgres.Stor
 		} else if deleted > 0 {
 			log.Printf("maintenance: deleted %d spans older than %s", deleted, cutoff.Format(time.RFC3339))
 		}
+		if cfg.AutoSeedDemo && cfg.DemoProject != "" {
+			maybeSeedDemo(ctx, cfg, store)
+		}
 		for _, project := range cfg.ListProjects() {
 			if _, err := eval.EvaluateProject(ctx, project); err != nil {
 				log.Printf("maintenance: alert eval for %q failed: %v", project, err)
@@ -160,19 +163,29 @@ func runMaintenance(ctx context.Context, cfg config.Config, store *postgres.Stor
 }
 
 func maybeSeedDemo(ctx context.Context, cfg config.Config, store *postgres.Store) {
-	n, err := store.SpanCount(ctx, cfg.DemoProject)
-	if err != nil {
+	needsSeed := func() bool {
+		n, err := store.SpanCount(ctx, cfg.DemoProject)
+		if err != nil {
+			return false
+		}
+		if n == 0 {
+			return true
+		}
+		hasTags, err := store.HasSearchableTags(ctx, cfg.DemoProject)
+		if err != nil || !hasTags {
+			return true
+		}
+		// Re-seed when demo data is stale (no spans in the last 2 hours).
+		recent, err := store.RecentSpanCount(ctx, cfg.DemoProject, time.Now().Add(-2*time.Hour))
+		if err != nil {
+			return false
+		}
+		return recent < 50
+	}
+	if !needsSeed() {
 		return
 	}
-	if n > 0 {
-		hasTags, err := store.HasSearchableTags(ctx, cfg.DemoProject)
-		if err != nil || hasTags {
-			return
-		}
-		log.Printf("demo project %q has legacy tagless data; adding tagged demo traces...", cfg.DemoProject)
-	} else {
-		log.Printf("seeding demo project %q...", cfg.DemoProject)
-	}
+	log.Printf("seeding demo project %q (fresh traces for intelligence)...", cfg.DemoProject)
 	endpoint := fmt.Sprintf("http://127.0.0.1:%s/v1/traces", cfg.Port)
 	// Start seed in background after a short delay so HTTP is up.
 	go func() {

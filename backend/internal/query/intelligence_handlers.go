@@ -32,6 +32,9 @@ func (a *API) handleListIncidents(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if incidents == nil {
+		incidents = []model.Incident{}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"incidents": incidents})
 }
 

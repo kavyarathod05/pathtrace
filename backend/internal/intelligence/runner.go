@@ -67,6 +67,9 @@ func (r *Runner) RunProject(ctx context.Context, project string) error {
 		}
 	}
 	_, _ = r.store.AutoResolveIncidents(ctx, project, time.Now().Add(-15*time.Minute))
+	if err := r.bootstrapDemoIncidents(ctx, project); err != nil {
+		return fmt.Errorf("demo bootstrap: %w", err)
+	}
 	return nil
 }
 

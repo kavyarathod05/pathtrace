@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"time"
 
 	"github.com/pathtrace/pathtrace/internal/model"
 )
@@ -19,6 +20,15 @@ func (s *Store) ListProjects(ctx context.Context) ([]string, error) {
 func (s *Store) SpanCount(ctx context.Context, project string) (int64, error) {
 	var n int64
 	err := s.pool.QueryRow(ctx, `SELECT count(*) FROM spans WHERE project_id=$1`, orDefault(project)).Scan(&n)
+	return n, err
+}
+
+// RecentSpanCount returns spans ingested since the given time.
+func (s *Store) RecentSpanCount(ctx context.Context, project string, since time.Time) (int64, error) {
+	var n int64
+	err := s.pool.QueryRow(ctx,
+		`SELECT count(*) FROM spans WHERE project_id=$1 AND start_time >= $2`,
+		orDefault(project), since).Scan(&n)
 	return n, err
 }
 
