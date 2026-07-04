@@ -13,6 +13,7 @@ import (
 	"github.com/pathtrace/pathtrace/internal/analytics"
 	"github.com/pathtrace/pathtrace/internal/config"
 	"github.com/pathtrace/pathtrace/internal/ingest"
+	"github.com/pathtrace/pathtrace/internal/intelligence"
 	"github.com/pathtrace/pathtrace/internal/livetail"
 	"github.com/pathtrace/pathtrace/internal/query"
 	"github.com/pathtrace/pathtrace/internal/queue"
@@ -141,6 +142,10 @@ func runMaintenance(ctx context.Context, cfg config.Config, store *postgres.Stor
 			if _, err := eval.EvaluateProject(ctx, project); err != nil {
 				log.Printf("maintenance: alert eval for %q failed: %v", project, err)
 			}
+			intel := intelligence.NewRunner(store, store.Pool())
+			if err := intel.RunProject(ctx, project); err != nil {
+				log.Printf("maintenance: intelligence for %q failed: %v", project, err)
+			}
 		}
 	}
 
@@ -176,6 +181,12 @@ func maybeSeedDemo(ctx context.Context, cfg config.Config, store *postgres.Store
 			log.Printf("demo seed: %v", err)
 		} else {
 			log.Printf("demo seed complete")
+			intel := intelligence.NewRunner(store, store.Pool())
+			if err := intel.RunProject(context.Background(), cfg.DemoProject); err != nil {
+				log.Printf("demo intelligence seed: %v", err)
+			} else {
+				log.Printf("demo incidents generated")
+			}
 		}
 	}()
 }

@@ -40,58 +40,7 @@ function formFromSearch(search: { get: (k: string) => string | null }): SearchPa
   return next;
 }
 
-function DurationScatter({
-  traces,
-  maxDur,
-  selectedId,
-  onPick,
-}: {
-  traces: TraceSummary[];
-  maxDur: number;
-  selectedId: string | null;
-  onPick: (id: string) => void;
-}) {
-  if (traces.length === 0) return null;
-  const ticks = [0, 0.25, 0.5, 0.75, 1];
-  return (
-    <div className="panel explore-chart">
-      <div className="panel-title">
-        <span>Duration distribution</span>
-        <span className="hint">{traces.length} traces</span>
-      </div>
-      <div className="scatter">
-        <div className="yaxis">
-          {ticks.map((t) => (
-            <div key={t} className="gl" style={{ bottom: `${t * 100}%` }}>
-              <span className="lbl">{formatDuration(maxDur * t)}</span>
-            </div>
-          ))}
-        </div>
-        {traces.map((t, i) => {
-          const x = traces.length > 1 ? (i / (traces.length - 1)) * 100 : 50;
-          const y = (t.durationUs / maxDur) * 100;
-          const err = t.errorCount > 0;
-          const sel = selectedId === t.traceId;
-          return (
-            <button
-              key={t.traceId}
-              type="button"
-              className={`dot${sel ? " selected" : ""}`}
-              title={`${t.rootService} · ${formatDuration(t.durationUs)}`}
-              style={{
-                left: `${x}%`,
-                bottom: `${y}%`,
-                background: err ? "var(--err)" : serviceColor(t.rootService),
-                boxShadow: sel ? "0 0 0 2px var(--accent-hi)" : err ? "0 0 0 2px var(--err-bg)" : undefined,
-              }}
-              onClick={() => onPick(t.traceId)}
-            />
-          );
-        })}
-      </div>
-    </div>
-  );
-}
+import { DurationChart } from "@/components/intelligence/DurationChart";
 
 function TimeHistogram({ traces }: { traces: TraceSummary[] }) {
   const [hover, setHover] = useState<number | null>(null);
@@ -256,7 +205,6 @@ function ExploreInner() {
   };
 
   const selectedSummary = results.find((t) => t.traceId === selectedId) ?? null;
-  const maxDur = Math.max(1, ...results.map((r) => r.durationUs));
 
   return (
     <>
@@ -287,12 +235,7 @@ function ExploreInner() {
           {results.length > 0 && (
             <div className="explore-charts">
               <TimeHistogram traces={results} />
-              <DurationScatter
-                traces={results}
-                maxDur={maxDur}
-                selectedId={selectedId}
-                onPick={setSelectedId}
-              />
+              <DurationChart traces={results} selectedId={selectedId} onPick={setSelectedId} />
             </div>
           )}
 

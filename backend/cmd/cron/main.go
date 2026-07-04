@@ -12,6 +12,7 @@ import (
 	"github.com/pathtrace/pathtrace/internal/alerts"
 	"github.com/pathtrace/pathtrace/internal/analytics"
 	"github.com/pathtrace/pathtrace/internal/config"
+	"github.com/pathtrace/pathtrace/internal/intelligence"
 	"github.com/pathtrace/pathtrace/internal/storage/postgres"
 )
 
@@ -49,5 +50,15 @@ func main() {
 		log.Printf("alert evaluation failed: %v", err)
 	} else {
 		log.Printf("alerts: %d rule(s) fired", fired)
+	}
+
+	// Intelligence pipeline.
+	intel := intelligence.NewRunner(store, store.Pool())
+	for _, project := range cfg.ListProjects() {
+		if err := intel.RunProject(ctx, project); err != nil {
+			log.Printf("intelligence for %q failed: %v", project, err)
+		} else {
+			log.Printf("intelligence: processed project %q", project)
+		}
 	}
 }

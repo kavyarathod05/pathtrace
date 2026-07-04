@@ -1,12 +1,16 @@
 import type {
   AlertEvent,
   AlertRule,
+  BlastRadiusEntry,
   ConnectInfo,
   DependencyEdge,
   ErrorGroup,
   FacetValue,
   FlameNode,
   Hotspot,
+  Incident,
+  IncidentEvent,
+  IntelligenceOverview,
   NotificationChannel,
   REDSeries,
   SavedView,
@@ -196,6 +200,32 @@ export async function testChannel(project: string, id: number): Promise<void> {
 
 export function liveTailURL(project: string): string {
   return `${API_BASE}/api/live${qs(project)}`;
+}
+
+export async function fetchIntelligenceOverview(project: string): Promise<IntelligenceOverview> {
+  return getJSON<IntelligenceOverview>(`/api/intelligence/overview${qs(project)}`);
+}
+
+export async function fetchIncidents(project: string, status?: string): Promise<Incident[]> {
+  const data = await getJSON<{ incidents: Incident[] }>(`/api/incidents${qs(project, { status, limit: 50 })}`);
+  return data.incidents ?? [];
+}
+
+export async function fetchIncident(project: string, id: number): Promise<Incident> {
+  return getJSON<Incident>(`/api/incidents/${id}${qs(project)}`);
+}
+
+export async function fetchIncidentTimeline(project: string, id: number): Promise<IncidentEvent[]> {
+  const data = await getJSON<{ events: IncidentEvent[] }>(`/api/incidents/${id}/timeline${qs(project)}`);
+  return data.events ?? [];
+}
+
+export async function fetchIncidentBlast(project: string, id: number): Promise<{ blastRadius: BlastRadiusEntry[]; edges: DependencyEdge[] }> {
+  return getJSON(`/api/incidents/${id}/blast-radius${qs(project)}`);
+}
+
+export async function resolveIncident(project: string, id: number): Promise<void> {
+  await sendJSON(`/api/incidents/${id}/resolve${qs(project)}`, "POST");
 }
 
 export function exploreURL(params: SearchParams, project?: string): string {

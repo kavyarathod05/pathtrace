@@ -35,16 +35,16 @@ export function formatPercent(v: number): string {
   return `${(v * 100).toFixed(2)}%`;
 }
 
-// Muted, print-safe palette. Deliberately avoids saturated/neon tones.
+// Bright palette for light backgrounds.
 const SERVICE_COLORS = [
-  "#4c9a92", // teal
-  "#c08a4a", // amber
-  "#7d8bb0", // slate blue
-  "#a86f8f", // mauve
-  "#6b9a5a", // moss
-  "#b0714f", // clay
-  "#5f8faa", // steel
-  "#9a8f5a", // olive
+  "#0ea5a0",
+  "#6366f1",
+  "#e8910a",
+  "#e34935",
+  "#22a06b",
+  "#4a7fd4",
+  "#a855f7",
+  "#0891b2",
 ];
 
 const cache = new Map<string, string>();

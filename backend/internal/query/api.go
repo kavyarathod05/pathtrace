@@ -76,6 +76,15 @@ func (a *API) Handler() http.Handler {
 		mux.HandleFunc("DELETE /api/alerts/channels/{id}", a.handleDeleteChannel)
 		mux.HandleFunc("POST /api/alerts/channels/{id}/test", a.handleTestChannel)
 		mux.HandleFunc("GET /api/live", a.handleLiveTail)
+		mux.HandleFunc("GET /api/intelligence/overview", a.handleIntelligenceOverview)
+		mux.HandleFunc("GET /api/incidents", a.handleListIncidents)
+		mux.HandleFunc("GET /api/incidents/{id}", a.handleGetIncident)
+		mux.HandleFunc("GET /api/incidents/{id}/rca", a.handleIncidentRCA)
+		mux.HandleFunc("GET /api/incidents/{id}/timeline", a.handleIncidentTimeline)
+		mux.HandleFunc("GET /api/incidents/{id}/blast-radius", a.handleIncidentBlast)
+		mux.HandleFunc("GET /api/incidents/{id}/debug", a.handleIncidentDebug)
+		mux.HandleFunc("POST /api/incidents/{id}/resolve", a.handleResolveIncident)
+		mux.HandleFunc("POST /api/deployments", a.handleCreateDeployment)
 	}
 
 	return a.withCORS(mux)

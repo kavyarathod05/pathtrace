@@ -7,8 +7,8 @@ import { ProjectProvider } from "@/lib/project";
 import { TimeProvider } from "@/lib/time-context";
 
 export const metadata: Metadata = {
-  title: "PathTrace",
-  description: "OpenTelemetry-native distributed tracing and service observability",
+  title: "PathTrace — Incident Intelligence",
+  description: "Self-explaining incident intelligence for distributed systems",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -185,3 +185,71 @@ export interface ConnectInfo {
   ingestKeys: { key: string; project: string }[];
   otelEnvExample: Record<string, string>;
 }
+
+export interface RootCause {
+  hypothesis: string;
+  confidence: number;
+  bottleneckService?: string;
+  bottleneckOperation?: string;
+  latencyInjectionPoint?: string;
+  evidenceTraceIds?: string[];
+  reasoning?: string[];
+}
+
+export interface ImpactedService {
+  service: string;
+  severity: number;
+  errorRate?: number;
+  p95Delta?: number;
+}
+
+export interface BlastRadiusEntry {
+  service: string;
+  hop: number;
+  severity: number;
+  errorRate?: number;
+  callVolume?: number;
+}
+
+export interface PlaybookStep {
+  priority: number;
+  action: string;
+  rationale?: string;
+}
+
+export interface Incident {
+  id: number;
+  projectId: string;
+  title: string;
+  status: string;
+  severity: number;
+  severityLabel: string;
+  primaryService: string;
+  rootCause: RootCause;
+  impacted: ImpactedService[];
+  blastRadius: BlastRadiusEntry[];
+  playbook: PlaybookStep[];
+  fingerprint: string;
+  startedAt: string;
+  resolvedAt?: string;
+  updatedAt: string;
+}
+
+export interface IncidentEvent {
+  id: number;
+  incidentId: number;
+  eventType: string;
+  service?: string;
+  summary: string;
+  evidence: Record<string, unknown>;
+  occurredAt: string;
+}
+
+export interface IntelligenceOverview {
+  systemStatus: string;
+  activeIncidents: number;
+  criticalIncidents: number;
+  topImpactedService?: string;
+  insight: string;
+  recentIncidents?: Incident[];
+}

@@ -204,3 +204,102 @@ type FlameNode struct {
 	Count    int64       `json:"count"`
 	Children []FlameNode `json:"children,omitempty"`
 }
+
+// RootCause is the analyzed hypothesis for an incident.
+type RootCause struct {
+	Hypothesis            string   `json:"hypothesis"`
+	Confidence            float64  `json:"confidence"`
+	BottleneckService     string   `json:"bottleneckService,omitempty"`
+	BottleneckOperation   string   `json:"bottleneckOperation,omitempty"`
+	LatencyInjectionPoint string   `json:"latencyInjectionPoint,omitempty"`
+	EvidenceTraceIDs      []string `json:"evidenceTraceIds,omitempty"`
+	Reasoning             []string `json:"reasoning,omitempty"`
+}
+
+// ImpactedService is one service affected by an incident.
+type ImpactedService struct {
+	Service    string  `json:"service"`
+	Severity   int     `json:"severity"`
+	ErrorRate  float64 `json:"errorRate,omitempty"`
+	P95Delta   float64 `json:"p95Delta,omitempty"`
+}
+
+// BlastRadiusEntry is one hop in failure propagation.
+type BlastRadiusEntry struct {
+	Service    string  `json:"service"`
+	Hop        int     `json:"hop"`
+	Severity   int     `json:"severity"`
+	ErrorRate  float64 `json:"errorRate,omitempty"`
+	CallVolume int64   `json:"callVolume,omitempty"`
+}
+
+// PlaybookStep is one suggested debug action.
+type PlaybookStep struct {
+	Priority  int    `json:"priority"`
+	Action    string `json:"action"`
+	Rationale string `json:"rationale,omitempty"`
+}
+
+// Incident is a materialized intelligence entity.
+type Incident struct {
+	ID             int64              `json:"id"`
+	ProjectID      string             `json:"projectId"`
+	Title          string             `json:"title"`
+	Status         string             `json:"status"`
+	Severity       int                `json:"severity"`
+	SeverityLabel  string             `json:"severityLabel"`
+	PrimaryService string             `json:"primaryService"`
+	RootCause      RootCause          `json:"rootCause"`
+	Impacted       []ImpactedService  `json:"impacted"`
+	BlastRadius    []BlastRadiusEntry `json:"blastRadius"`
+	Playbook       []PlaybookStep     `json:"playbook"`
+	Fingerprint    string             `json:"fingerprint"`
+	StartedAt      time.Time          `json:"startedAt"`
+	ResolvedAt     *time.Time         `json:"resolvedAt,omitempty"`
+	UpdatedAt      time.Time          `json:"updatedAt"`
+}
+
+// IncidentEvent is one timeline entry for an incident.
+type IncidentEvent struct {
+	ID         int64          `json:"id"`
+	IncidentID int64          `json:"incidentId"`
+	EventType  string         `json:"eventType"`
+	Service    string         `json:"service,omitempty"`
+	Summary    string         `json:"summary"`
+	Evidence   map[string]any `json:"evidence"`
+	OccurredAt time.Time      `json:"occurredAt"`
+}
+
+// Deployment records a service change.
+type Deployment struct {
+	ID         int64          `json:"id"`
+	ProjectID  string         `json:"projectId"`
+	Service    string         `json:"service"`
+	Version    string         `json:"version,omitempty"`
+	ChangeType string         `json:"changeType"`
+	Metadata   map[string]any `json:"metadata"`
+	DeployedAt time.Time      `json:"deployedAt"`
+}
+
+// ServiceBaseline holds rolling RED metrics for anomaly detection.
+type ServiceBaseline struct {
+	ProjectID  string    `json:"projectId"`
+	Service    string    `json:"service"`
+	WindowMin  int       `json:"windowMin"`
+	ErrorRate  float64   `json:"errorRate"`
+	P50US      int64     `json:"p50Us"`
+	P95US      int64     `json:"p95Us"`
+	P99US      int64     `json:"p99Us"`
+	Throughput float64   `json:"throughput"`
+	UpdatedAt  time.Time `json:"updatedAt"`
+}
+
+// IntelligenceOverview is the system health summary for the home page.
+type IntelligenceOverview struct {
+	SystemStatus      string     `json:"systemStatus"`
+	ActiveIncidents   int        `json:"activeIncidents"`
+	CriticalIncidents int        `json:"criticalIncidents"`
+	TopImpacted       string     `json:"topImpactedService,omitempty"`
+	Insight           string     `json:"insight"`
+	RecentIncidents   []Incident `json:"recentIncidents,omitempty"`
+}
