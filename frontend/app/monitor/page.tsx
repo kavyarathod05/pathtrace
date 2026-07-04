@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchHotspots, fetchRED, fetchServiceHealth } from "@/lib/api";
 import { useProject } from "@/lib/project";
+import { useTimeWindow } from "@/lib/time-context";
 import type { Hotspot, ServiceHealth, TimeSeriesPoint } from "@/lib/types";
+import { PageHeader } from "@/components/shell/PageHeader";
 import { HealthInsightBanner } from "@/components/monitor/HealthInsightBanner";
 import { KeyMetricsRow } from "@/components/monitor/KeyMetricsRow";
 import { TrendPanel } from "@/components/monitor/TrendPanel";
@@ -16,11 +18,9 @@ import {
   stepFor,
 } from "@/lib/monitor";
 
-const WINDOWS = ["15m", "1h", "6h", "24h"];
-
 export default function MonitorPage() {
   const { project } = useProject();
-  const [win, setWin] = useState("1h");
+  const { window: win, refreshKey } = useTimeWindow();
   const [health, setHealth] = useState<ServiceHealth[]>([]);
   const [hotspots, setHotspots] = useState<Hotspot[]>([]);
   const [scope, setScope] = useState("");
@@ -41,7 +41,7 @@ export default function MonitorPage() {
       })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
-  }, [project, win]);
+  }, [project, win, refreshKey]);
 
   useEffect(() => {
     if (!scope) {
@@ -53,7 +53,7 @@ export default function MonitorPage() {
       .then((series) => setRedPoints({ step: series.step, points: series.points }))
       .catch(() => setRedPoints(null))
       .finally(() => setTrendLoading(false));
-  }, [project, scope, win]);
+  }, [project, scope, win, refreshKey]);
 
   const points = redPoints?.points ?? [];
   const kpis = useMemo(() => aggregateHealth(health), [health]);
@@ -65,19 +65,10 @@ export default function MonitorPage() {
 
   return (
     <>
-      <div className="page-head">
-        <div>
-          <h1>System Health</h1>
-          <div className="sub">Overview for project <code>{project}</code></div>
-        </div>
-        <div className="seg">
-          {WINDOWS.map((w) => (
-            <button key={w} type="button" className={win === w ? "on" : ""} onClick={() => setWin(w)}>
-              Last {w}
-            </button>
-          ))}
-        </div>
-      </div>
+      <PageHeader
+        title="System Health"
+        subtitle={<>Overview for project <code>{project}</code></>}
+      />
 
       <div className="page-body monitor-page">
         {error && <div className="err-note" style={{ marginBottom: 16 }}>{error}</div>}

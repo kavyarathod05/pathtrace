@@ -4,23 +4,24 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { fetchFacets } from "@/lib/api";
 import { useProject } from "@/lib/project";
-import { TimeWindowSelect } from "@/components/TimeWindowSelect";
+import { useTimeWindow } from "@/lib/time-context";
 import type { FacetValue } from "@/lib/types";
+import { PageHeader } from "@/components/shell/PageHeader";
 
 const TAGS = ["http.route", "deployment.environment", "deployment.version", "exception.type", "error.type", "service.name"];
 
 export default function FacetsPage() {
   const router = useRouter();
   const { project } = useProject();
+  const { window: win, refreshKey } = useTimeWindow();
   const [tag, setTag] = useState("http.route");
-  const [win, setWin] = useState("1h");
   const [facets, setFacets] = useState<FacetValue[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setError(null);
     fetchFacets(project, tag, win).then(setFacets).catch((e) => setError(String(e)));
-  }, [project, tag, win]);
+  }, [project, tag, win, refreshKey]);
 
   const max = Math.max(1, ...facets.map((f) => f.count));
 
@@ -31,21 +32,18 @@ export default function FacetsPage() {
 
   return (
     <>
-      <div className="page-head">
-        <div>
-          <h1>Tag Facets</h1>
-          <div className="sub">Top attribute values · project <code>{project}</code> · click a row to search traces</div>
-        </div>
-        <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
+      <PageHeader
+        title="Tag Facets"
+        subtitle={<>Top attribute values · project <code>{project}</code> · click a row to search traces</>}
+        actions={
           <div className="field">
             <label>Tag key</label>
             <select value={tag} onChange={(e) => setTag(e.target.value)}>
               {TAGS.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
-          <TimeWindowSelect value={win} onChange={setWin} />
-        </div>
-      </div>
+        }
+      />
       <div className="page-body">
         {error && <div className="err-note" style={{ marginBottom: 16 }}>{error}</div>}
         <div className="panel">

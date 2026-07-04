@@ -20,9 +20,9 @@ import (
 
 func main() {
 	endpoint := flag.String("endpoint", "http://localhost:8080/v1/traces", "OTLP HTTP traces endpoint")
-	count := flag.Int("count", 200, "number of traces to generate")
+	count := flag.Int("count", 600, "number of traces to generate")
 	key := flag.String("key", "", "ingest key (x-pathtrace-key)")
-	spread := flag.Duration("spread", 30*time.Minute, "spread trace start times across this past window")
+	spread := flag.Duration("spread", 24*time.Hour, "spread trace start times across this past window")
 	flag.Parse()
 
 	log.SetPrefix("[tracegen] ")
@@ -30,7 +30,9 @@ func main() {
 
 	sent := 0
 	for i := 0; i < *count; i++ {
-		startedAgo := time.Duration(rng.Int63n(int64(*spread)))
+		// Bias start times toward recent (r*r) so every UI time window has data.
+		r := rng.Float64()
+		startedAgo := time.Duration(r * r * float64(*spread))
 		start := time.Now().Add(-startedAgo)
 		payload := buildTrace(rng, start)
 		if err := post(*endpoint, *key, payload); err != nil {

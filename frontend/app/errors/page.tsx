@@ -4,12 +4,14 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { fetchErrorGroup, fetchErrorGroups } from "@/lib/api";
 import { useProject } from "@/lib/project";
+import { useTimeWindow } from "@/lib/time-context";
 import type { ErrorGroup } from "@/lib/types";
 import { formatTimeAgo, serviceColor, shortId } from "@/lib/format";
+import { PageHeader } from "@/components/shell/PageHeader";
 
 export default function ErrorsPage() {
   const { project } = useProject();
-  const [win, setWin] = useState("1h");
+  const { window: win, refreshKey } = useTimeWindow();
   const [groups, setGroups] = useState<ErrorGroup[]>([]);
   const [selected, setSelected] = useState<ErrorGroup | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -22,7 +24,7 @@ export default function ErrorsPage() {
         setSelected(null);
       })
       .catch((e) => setError(String(e)));
-  }, [project, win]);
+  }, [project, win, refreshKey]);
 
   const drill = (g: ErrorGroup) => {
     setSelected(g);
@@ -33,17 +35,10 @@ export default function ErrorsPage() {
 
   return (
     <>
-      <div className="page-head">
-        <div>
-          <h1>Error Groups</h1>
-          <div className="sub">Exceptions grouped by fingerprint · project <code>{project}</code></div>
-        </div>
-        <div className="seg">
-          {["15m", "1h", "6h", "24h"].map((w) => (
-            <button key={w} type="button" className={win === w ? "on" : ""} onClick={() => setWin(w)}>Last {w}</button>
-          ))}
-        </div>
-      </div>
+      <PageHeader
+        title="Error Groups"
+        subtitle={<>Exceptions grouped by fingerprint · project <code>{project}</code></>}
+      />
 
       <div className="page-body">
         {error && <div className="err-note" style={{ marginBottom: 16 }}>{error}</div>}

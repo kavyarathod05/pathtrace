@@ -3,10 +3,10 @@
 import { useEffect, useState } from "react";
 import { fetchHotspots, fetchServiceHealth } from "@/lib/api";
 import { useProject } from "@/lib/project";
+import { useTimeWindow } from "@/lib/time-context";
 import type { Hotspot, ServiceHealth } from "@/lib/types";
 import { formatDuration, formatPercent, serviceColor } from "@/lib/format";
-
-const WINDOWS = ["15m", "1h", "6h", "24h"];
+import { PageHeader } from "@/components/shell/PageHeader";
 
 function LatencyBar({ h }: { h: ServiceHealth }) {
   const max = Math.max(h.p99Us, 1);
@@ -22,7 +22,7 @@ function LatencyBar({ h }: { h: ServiceHealth }) {
 
 export default function HealthPage() {
   const { project } = useProject();
-  const [win, setWin] = useState("1h");
+  const { window: win, refreshKey } = useTimeWindow();
   const [health, setHealth] = useState<ServiceHealth[]>([]);
   const [hotspots, setHotspots] = useState<Hotspot[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -32,24 +32,17 @@ export default function HealthPage() {
     Promise.all([fetchServiceHealth(project, win), fetchHotspots(project, win)])
       .then(([h, s]) => { setHealth(h); setHotspots(s); })
       .catch((e) => setError(String(e)));
-  }, [win, project]);
+  }, [win, project, refreshKey]);
 
   const latencyClass = (us: number) => (us > 400_000 ? "err" : us > 150_000 ? "warn" : "");
   const errClass = (r: number) => (r > 0.05 ? "err" : r > 0.01 ? "warn" : "");
 
   return (
     <>
-      <div className="page-head">
-        <div>
-          <h1>Service Health</h1>
-          <div className="sub">Latency percentiles, error rate, and throughput per service</div>
-        </div>
-        <div className="seg">
-          {WINDOWS.map((w) => (
-            <button key={w} type="button" className={win === w ? "on" : ""} onClick={() => setWin(w)}>Last {w}</button>
-          ))}
-        </div>
-      </div>
+      <PageHeader
+        title="Service Health"
+        subtitle="Latency percentiles, error rate, and throughput per service"
+      />
 
       <div className="page-body">
         {error && <div className="err-note" style={{ marginBottom: 16 }}>{error}</div>}

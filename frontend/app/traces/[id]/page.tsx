@@ -1,13 +1,19 @@
 "use client";
 
-import { use, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { use, useEffect, useMemo, useState } from "react";
 import { fetchTrace } from "@/lib/api";
 import { useProject } from "@/lib/project";
 import type { Span, Trace } from "@/lib/types";
 import { buildLayout } from "@/lib/trace";
+import { computeTraceInsights } from "@/lib/insights";
 import { formatDuration, serviceColor } from "@/lib/format";
 import { Waterfall } from "@/components/Waterfall";
+import { ServiceLaneWaterfall } from "@/components/trace/ServiceLaneWaterfall";
+import { TraceInsightsPanel } from "@/components/trace/TraceInsightsPanel";
+import { PageHeader } from "@/components/shell/PageHeader";
+
+type ViewMode = "tree" | "lanes";
 
 export default function TracePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -16,6 +22,7 @@ export default function TracePage({ params }: { params: Promise<{ id: string }> 
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Span | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [viewMode, setViewMode] = useState<ViewMode>("tree");
 
   useEffect(() => {
     fetchTrace(project, id)
@@ -27,6 +34,7 @@ export default function TracePage({ params }: { params: Promise<{ id: string }> 
   }, [id, project]);
 
   const layout = useMemo(() => (trace ? buildLayout(trace) : null), [trace]);
+  const insights = useMemo(() => (trace ? computeTraceInsights(trace) : []), [trace]);
 
   const childrenOf = useMemo(() => {
     const m = new Map<string, string[]>();
@@ -46,6 +54,11 @@ export default function TracePage({ params }: { params: Promise<{ id: string }> 
       else next.add(spanId);
       return next;
     });
+  };
+
+  const selectSpanById = (spanId: string) => {
+    const span = trace?.spans.find((s) => s.spanId === spanId);
+    if (span) setSelected(span);
   };
 
   if (error) {
@@ -69,18 +82,28 @@ export default function TracePage({ params }: { params: Promise<{ id: string }> 
 
   return (
     <>
-      <div className="page-head">
-        <div>
-          <h1>
+      <PageHeader
+        title={
+          <>
             <span className="svc-tag" style={{ fontSize: 16 }}>
               <span className="swatch" style={{ width: 10, height: 10, background: serviceColor(s.rootService) }} />
               {s.rootService}
             </span>{" "}
             <span style={{ color: "var(--text-dim)", fontWeight: 450 }}>{s.rootOperation}</span>
-          </h1>
-          <div className="sub"><code>{trace.traceId}</code></div>
-        </div>
-      </div>
+          </>
+        }
+        subtitle={<code>{trace.traceId}</code>}
+        actions={
+          <div className="seg trace-view-toggle">
+            <button type="button" className={viewMode === "tree" ? "on" : ""} onClick={() => setViewMode("tree")}>
+              Tree
+            </button>
+            <button type="button" className={viewMode === "lanes" ? "on" : ""} onClick={() => setViewMode("lanes")}>
+              Service lanes
+            </button>
+          </div>
+        }
+      />
 
       <div className="page-body">
         <div className="stat-strip" style={{ marginBottom: 18 }}>
@@ -95,19 +118,28 @@ export default function TracePage({ params }: { params: Promise<{ id: string }> 
           <span className="hint">Click a span to inspect · collapse branches with ▾ · Ctrl+scroll to zoom</span>
         </div>
 
-        <div className="row-gap">
-          <div className="grow">
-            <Waterfall
-              layout={layout}
-              selectedId={selected?.spanId}
-              onSelect={setSelected}
-              collapsed={collapsed}
-              onToggle={toggle}
-              childrenOf={childrenOf}
-            />
+        <div className="trace-detail-layout">
+          <div className="trace-detail-main">
+            {viewMode === "tree" ? (
+              <Waterfall
+                layout={layout}
+                selectedId={selected?.spanId}
+                onSelect={setSelected}
+                collapsed={collapsed}
+                onToggle={toggle}
+                childrenOf={childrenOf}
+              />
+            ) : (
+              <ServiceLaneWaterfall
+                layout={layout}
+                selectedId={selected?.spanId}
+                onSelect={setSelected}
+              />
+            )}
           </div>
 
-          <div style={{ width: 360, flex: "none" }}>
+          <div className="trace-detail-side">
+            <TraceInsightsPanel insights={insights} onSelectSpan={selectSpanById} />
             <SpanDetail span={selected} />
           </div>
         </div>

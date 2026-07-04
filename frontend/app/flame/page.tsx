@@ -3,9 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchFlameGraph, fetchServices } from "@/lib/api";
 import { useProject } from "@/lib/project";
-import { TimeWindowSelect } from "@/components/TimeWindowSelect";
+import { useTimeWindow } from "@/lib/time-context";
 import type { FlameNode } from "@/lib/types";
 import { formatDuration, serviceColor } from "@/lib/format";
+import { PageHeader } from "@/components/shell/PageHeader";
 
 const ROW_H = 22;
 const W = 1000;
@@ -103,9 +104,9 @@ function nodeAtPath(root: FlameNode, path: number[]): FlameNode {
 
 export default function FlamePage() {
   const { project } = useProject();
+  const { window: win, refreshKey } = useTimeWindow();
   const [services, setServices] = useState<string[]>([]);
   const [service, setService] = useState("");
-  const [win, setWin] = useState("1h");
   const [tree, setTree] = useState<FlameNode | null>(null);
   const [focus, setFocus] = useState<number[]>([]);
   const [hover, setHover] = useState<FlameNode | null>(null);
@@ -125,7 +126,7 @@ export default function FlamePage() {
     fetchFlameGraph(project, service, undefined, win)
       .then(setTree)
       .catch((e) => setError(String(e)));
-  }, [service, win, project]);
+  }, [service, win, project, refreshKey]);
 
   const focusNode = useMemo(() => (tree ? nodeAtPath(tree, focus) : null), [tree, focus]);
   const depth = useMemo(() => (focusNode ? maxDepth(focusNode) : 0), [focusNode]);
@@ -137,13 +138,10 @@ export default function FlamePage() {
 
   return (
     <>
-      <div className="page-head">
-        <div>
-          <h1>Flame Graph</h1>
-          <div className="sub">Aggregated span self-time by call path · project <code>{project}</code></div>
-        </div>
-        <TimeWindowSelect value={win} onChange={setWin} />
-      </div>
+      <PageHeader
+        title="Flame Graph"
+        subtitle={<>Aggregated span self-time by call path · project <code>{project}</code></>}
+      />
 
       <div className="page-body">
         <div className="toolbar">
