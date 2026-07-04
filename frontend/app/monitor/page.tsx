@@ -1,161 +1,112 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { fetchOperations, fetchRED, fetchServices } from "@/lib/api";
+import { fetchHotspots, fetchRED, fetchServiceHealth } from "@/lib/api";
 import { useProject } from "@/lib/project";
-import { LineChart } from "@/components/LineChart";
-import { TimeWindowSelect } from "@/components/TimeWindowSelect";
-import type { REDSeries } from "@/lib/types";
-import { formatDuration, formatPercent } from "@/lib/format";
+import type { Hotspot, ServiceHealth, TimeSeriesPoint } from "@/lib/types";
+import { HealthInsightBanner } from "@/components/monitor/HealthInsightBanner";
+import { KeyMetricsRow } from "@/components/monitor/KeyMetricsRow";
+import { TrendPanel } from "@/components/monitor/TrendPanel";
+import { ImpactedServicesSection } from "@/components/monitor/ImpactedServicesSection";
+import { InvestigateActions } from "@/components/monitor/InvestigateActions";
+import {
+  aggregateHealth,
+  computeInsight,
+  pickFocusService,
+  stepFor,
+} from "@/lib/monitor";
 
-function stepFor(win: string): string {
-  switch (win) {
-    case "15m": return "1m";
-    case "1h": return "1m";
-    case "6h": return "5m";
-    case "24h": return "30m";
-    default: return "1m";
-  }
-}
+const WINDOWS = ["15m", "1h", "6h", "24h"];
 
 export default function MonitorPage() {
   const { project } = useProject();
-  const [services, setServices] = useState<string[]>([]);
-  const [operations, setOperations] = useState<string[]>([]);
-  const [service, setService] = useState("");
-  const [operation, setOperation] = useState("");
   const [win, setWin] = useState("1h");
-  const [red, setRed] = useState<REDSeries | null>(null);
+  const [health, setHealth] = useState<ServiceHealth[]>([]);
+  const [hotspots, setHotspots] = useState<Hotspot[]>([]);
+  const [scope, setScope] = useState("");
+  const [redPoints, setRedPoints] = useState<{ step: string; points: TimeSeriesPoint[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [trendLoading, setTrendLoading] = useState(false);
 
   useEffect(() => {
-    fetchServices(project)
-      .then((s) => {
-        setServices(s);
-        if (s.length && !service) setService(s[0]);
-      })
-      .catch((e) => setError(String(e)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project]);
-
-  useEffect(() => {
-    if (service) {
-      fetchOperations(project, service).then(setOperations).catch(() => setOperations([]));
-    } else {
-      setOperations([]);
-    }
-    setOperation("");
-  }, [service, project]);
-
-  useEffect(() => {
-    if (!service) return;
     setLoading(true);
     setError(null);
-    fetchRED(project, service, operation || undefined, win, stepFor(win))
-      .then(setRed)
+    Promise.all([fetchServiceHealth(project, win), fetchHotspots(project, win)])
+      .then(([h, hot]) => {
+        setHealth(h);
+        setHotspots(hot);
+        const focus = pickFocusService(h, hot) ?? h[0]?.service ?? "";
+        setScope((prev) => (prev && h.some((s) => s.service === prev) ? prev : focus));
+      })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
-  }, [service, operation, win, project]);
+  }, [project, win]);
 
-  const labels = useMemo(
-    () => (red?.points ?? []).map((p) => new Date(p.time).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false })),
-    [red],
+  useEffect(() => {
+    if (!scope) {
+      setRedPoints(null);
+      return;
+    }
+    setTrendLoading(true);
+    fetchRED(project, scope, undefined, win, stepFor(win))
+      .then((series) => setRedPoints({ step: series.step, points: series.points }))
+      .catch(() => setRedPoints(null))
+      .finally(() => setTrendLoading(false));
+  }, [project, scope, win]);
+
+  const points = redPoints?.points ?? [];
+  const kpis = useMemo(() => aggregateHealth(health), [health]);
+  const insight = useMemo(
+    () => computeInsight(health, hotspots, win, points),
+    [health, hotspots, win, points],
   );
-
-  const totals = useMemo(() => {
-    const pts = red?.points ?? [];
-    const count = pts.reduce((a, p) => a + p.count, 0);
-    const errs = pts.reduce((a, p) => a + p.errorCount, 0);
-    const p95 = Math.max(0, ...pts.map((p) => p.p95Us));
-    return { count, errs, errorRate: count ? errs / count : 0, p95 };
-  }, [red]);
+  const services = useMemo(() => health.map((h) => h.service), [health]);
 
   return (
     <>
       <div className="page-head">
         <div>
-          <h1>Monitor · RED Metrics</h1>
-          <div className="sub">Rate, errors, and duration for <code>{project}</code></div>
+          <h1>System Health</h1>
+          <div className="sub">Overview for project <code>{project}</code></div>
+        </div>
+        <div className="seg">
+          {WINDOWS.map((w) => (
+            <button key={w} type="button" className={win === w ? "on" : ""} onClick={() => setWin(w)}>
+              Last {w}
+            </button>
+          ))}
         </div>
       </div>
 
-      <div className="page-body">
-        <div className="toolbar">
-          <div className="field">
-            <label>Service</label>
-            <select value={service} onChange={(e) => setService(e.target.value)}>
-              <option value="">Select service…</option>
-              {services.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <div className="field">
-            <label>Operation</label>
-            <select value={operation} onChange={(e) => setOperation(e.target.value)} disabled={!service}>
-              <option value="">All operations</option>
-              {operations.map((o) => <option key={o} value={o}>{o}</option>)}
-            </select>
-          </div>
-          <TimeWindowSelect value={win} onChange={setWin} />
-          <div className="spacer" />
-          {service && (
-            <Link className="btn ghost" href={`/explore?service=${encodeURIComponent(service)}${operation ? `&operation=${encodeURIComponent(operation)}` : ""}`}>
-              View traces →
-            </Link>
-          )}
-        </div>
-
+      <div className="page-body monitor-page">
         {error && <div className="err-note" style={{ marginBottom: 16 }}>{error}</div>}
 
-        {!service ? (
-          <div className="empty"><div className="big">Pick a service to see RED metrics</div>Rate, errors, and duration over time.</div>
+        {loading ? (
+          <div className="empty"><div className="big">Loading system health…</div></div>
+        ) : health.length === 0 ? (
+          <div className="empty">
+            <div className="big">No traffic in this window</div>
+            Try a longer time range or send demo traffic.
+          </div>
         ) : (
           <>
-            <div className="stat-strip" style={{ marginBottom: 18 }}>
-              <div className="stat"><div className="k">Requests</div><div className="v">{totals.count.toLocaleString()}</div></div>
-              <div className="stat"><div className="k">Errors</div><div className={`v${totals.errs ? " err" : ""}`}>{totals.errs.toLocaleString()}</div></div>
-              <div className="stat"><div className="k">Error rate</div><div className={`v${totals.errorRate > 0.05 ? " err" : ""}`}>{formatPercent(totals.errorRate)}</div></div>
-              <div className="stat"><div className="k">Peak p95</div><div className="v accent">{formatDuration(totals.p95)}</div></div>
-            </div>
+            <HealthInsightBanner insight={insight} project={project} />
 
-            <div className="panel" style={{ marginBottom: 18 }}>
-              <div className="panel-title"><span>Duration percentiles</span><span className="hint">{loading ? "loading…" : `${red?.step ?? ""} buckets`}</span></div>
-              <div style={{ padding: 16 }}>
-                <LineChart
-                  labels={labels}
-                  formatValue={formatDuration}
-                  series={[
-                    { label: "p50", color: "var(--ok)", values: (red?.points ?? []).map((p) => p.p50Us) },
-                    { label: "p95", color: "var(--warn)", values: (red?.points ?? []).map((p) => p.p95Us) },
-                    { label: "p99", color: "var(--err)", values: (red?.points ?? []).map((p) => p.p99Us) },
-                  ]}
-                />
-              </div>
-            </div>
+            <KeyMetricsRow kpis={kpis} points={points} />
 
-            <div className="row-gap">
-              <div className="grow panel">
-                <div className="panel-title"><span>Request rate</span><span className="hint">spans per bucket</span></div>
-                <div style={{ padding: 16 }}>
-                  <LineChart
-                    labels={labels}
-                    formatValue={(v) => v.toFixed(0)}
-                    series={[{ label: "requests", color: "var(--accent)", values: (red?.points ?? []).map((p) => p.count) }]}
-                  />
-                </div>
-              </div>
-              <div className="grow panel">
-                <div className="panel-title"><span>Errors</span><span className="hint">error count per bucket</span></div>
-                <div style={{ padding: 16 }}>
-                  <LineChart
-                    labels={labels}
-                    formatValue={(v) => v.toFixed(0)}
-                    series={[{ label: "errors", color: "var(--err)", values: (red?.points ?? []).map((p) => p.errorCount) }]}
-                  />
-                </div>
-              </div>
-            </div>
+            <TrendPanel
+              points={points}
+              step={redPoints?.step ?? stepFor(win)}
+              services={services}
+              scope={scope}
+              onScopeChange={setScope}
+              loading={trendLoading}
+            />
+
+            <ImpactedServicesSection health={health} onSelect={setScope} />
+
+            <InvestigateActions insight={insight} project={project} scope={scope} />
           </>
         )}
       </div>

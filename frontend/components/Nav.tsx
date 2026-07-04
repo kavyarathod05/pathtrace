@@ -1,10 +1,12 @@
 "use client";
 
-import { usePathname } from "next/navigation";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
-import { API_BASE } from "@/lib/api";
+import { API_BASE, fetchServices } from "@/lib/api";
+import { useProject } from "@/lib/project";
 import { ProjectSelector } from "@/components/ProjectSelector";
+import { serviceColor } from "@/lib/format";
 
 function Icon({ path, box = "0 0 24 24" }: { path: ReactNode; box?: string }) {
   return (
@@ -38,25 +40,35 @@ const NAV: { section: string; items: { href: string; label: string; icon: string
     ],
   },
   {
-    section: "Observe",
+    section: "Traces",
     items: [
       { href: "/explore", label: "Explore", icon: "explore" },
       { href: "/live", label: "Live Tail", icon: "live" },
-      { href: "/monitor", label: "Monitor", icon: "monitor" },
+    ],
+  },
+  {
+    section: "Analysis",
+    items: [
+      { href: "/monitor", label: "System Health", icon: "monitor" },
       { href: "/health", label: "Service Health", icon: "health" },
       { href: "/errors", label: "Errors", icon: "errors" },
       { href: "/flame", label: "Flame Graph", icon: "flame" },
       { href: "/service-map", label: "Service Map", icon: "map" },
       { href: "/facets", label: "Facets", icon: "facets" },
       { href: "/diff", label: "Trace Diff", icon: "diff" },
-      { href: "/alerts", label: "Alerts", icon: "alerts" },
     ],
+  },
+  {
+    section: "Configure",
+    items: [{ href: "/alerts", label: "Alerts", icon: "alerts" }],
   },
 ];
 
 export function Nav() {
   const pathname = usePathname();
+  const { project } = useProject();
   const [up, setUp] = useState<boolean | null>(null);
+  const [services, setServices] = useState<string[]>([]);
   const showProject = pathname !== "/" && pathname !== "/connect";
 
   useEffect(() => {
@@ -68,8 +80,18 @@ export function Nav() {
     };
     ping();
     const id = setInterval(ping, 10000);
-    return () => { active = false; clearInterval(id); };
+    return () => {
+      active = false;
+      clearInterval(id);
+    };
   }, []);
+
+  useEffect(() => {
+    if (!showProject) return;
+    fetchServices(project)
+      .then(setServices)
+      .catch(() => setServices([]));
+  }, [project, showProject]);
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/");
@@ -103,6 +125,27 @@ export function Nav() {
             ))}
           </div>
         ))}
+
+        {showProject && services.length > 0 && (
+          <div className="nav-services">
+            <div className="nav-section">Services</div>
+            {services.slice(0, 8).map((svc) => (
+              <Link
+                key={svc}
+                href={`/explore?service=${encodeURIComponent(svc)}`}
+                className={`nav-link nav-service-link${pathname === "/explore" ? "" : ""}`}
+              >
+                <span className="swatch" style={{ background: serviceColor(svc), width: 8, height: 8, borderRadius: 2 }} />
+                {svc}
+              </Link>
+            ))}
+            {services.length > 8 && (
+              <Link href="/explore" className="nav-link nav-more">
+                +{services.length - 8} more
+              </Link>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="nav-foot">
