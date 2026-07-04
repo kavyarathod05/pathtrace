@@ -120,18 +120,31 @@ export function Waterfall({
           </div>
         </div>
 
-        <div className="wf-body" ref={trackRef}>
+        <div
+          className="wf-body"
+          ref={trackRef}
+          onMouseMove={(e) => {
+            const body = trackRef.current;
+            if (!body) return;
+            const grid = body.querySelector(".wf-gridlines") as HTMLElement | null;
+            if (!grid) return;
+            const rect = grid.getBoundingClientRect();
+            if (rect.width <= 0) return;
+            const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+            setHoverX(pct * 100);
+          }}
+          onMouseLeave={() => setHoverX(null)}
+        >
           <div className="wf-gridlines">
             {ticks.map((t) => (
               <div key={t} className="gl" style={{ left: `${t * 100}%` }} />
             ))}
+            {hoverX !== null && (
+              <div className="wf-crosshair" style={{ left: `${hoverX}%` }}>
+                <span className="wf-crosshair-tip">{formatAxisTime(viewOffsetUs + viewRangeUs * (hoverX / 100))}</span>
+              </div>
+            )}
           </div>
-
-          {hoverX !== null && (
-            <div className="wf-crosshair" style={{ left: `${hoverX}%` }}>
-              <span className="wf-crosshair-tip">{formatAxisTime(viewOffsetUs + viewRangeUs * hoverX)}</span>
-            </div>
-          )}
 
           {visibleRows.map((row) => (
             <WaterfallRow
@@ -188,26 +201,46 @@ function WaterfallRow({
         <span className="svc">· {span.serviceName}</span>
         {onCriticalPath && <span className="crit-dot" title="Critical path" />}
       </div>
-      <div
-        className="wf-track"
-        onMouseMove={(e) => {
-          const rect = e.currentTarget.getBoundingClientRect();
-          const pct = ((e.clientX - rect.left) / rect.width) * 100;
-          e.currentTarget.closest(".wf-body")?.setAttribute("data-hover", String(pct));
-        }}
-      >
+      <div className="wf-track">
         <div
-          className={`wf-bar${isErr ? " err" : ""}`}
-          style={{
-            left: `${barStyle.left}%`,
-            width: `${barStyle.width}%`,
-            background: `linear-gradient(90deg, ${color} ${selfPct}%, ${color}88 ${selfPct}%)`,
-            opacity: onCriticalPath ? 0.95 : 0.55,
-          }}
-        />
-        <span className="wf-dur" style={{ left: `calc(${Math.min(barStyle.left + barStyle.width, 90)}% + 8px)` }}>
-          {formatDuration(span.durationUs)}
-        </span>
+          className={`wf-bar-wrap${onCriticalPath ? " critical" : ""}`}
+          style={{ left: `${barStyle.left}%`, width: `${barStyle.width}%` }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div
+            className={`wf-bar${isErr ? " err" : ""}`}
+            style={{
+              background: `linear-gradient(90deg, ${color} ${selfPct}%, ${color}88 ${selfPct}%)`,
+              opacity: onCriticalPath ? 0.95 : 0.72,
+            }}
+          />
+          {barStyle.width >= 5 && (
+            <span className="wf-bar-label">{formatDuration(span.durationUs)}</span>
+          )}
+          <div className={`wf-bar-tip${depth < 2 ? " below" : ""}`} role="tooltip">
+            <div className="wf-tip-title">{span.operationName}</div>
+            <div className="wf-tip-sub">
+              <span className="swatch" style={{ background: color }} />
+              {span.serviceName}
+              {span.kind ? ` · ${span.kind}` : ""}
+            </div>
+            <div className="wf-tip-grid">
+              <span>Duration</span><strong>{formatDuration(span.durationUs)}</strong>
+              <span>Self time</span><strong>{formatDuration(selfUs)}</strong>
+              <span>Start</span><strong>{formatAxisTime(row.offsetUs)}</strong>
+              <span>Status</span>
+              <strong className={isErr ? "err" : ""}>{isErr ? (span.statusMessage || "ERROR") : "OK"}</strong>
+            </div>
+          </div>
+        </div>
+        {barStyle.width < 5 && (
+          <span
+            className="wf-dur-outside"
+            style={{ left: `calc(${barStyle.left + barStyle.width}% + 6px)` }}
+          >
+            {formatDuration(span.durationUs)}
+          </span>
+        )}
       </div>
     </div>
   );
