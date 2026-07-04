@@ -152,15 +152,23 @@ func runMaintenance(ctx context.Context, cfg config.Config, store *postgres.Stor
 
 func maybeSeedDemo(ctx context.Context, cfg config.Config, store *postgres.Store) {
 	n, err := store.SpanCount(ctx, cfg.DemoProject)
-	if err != nil || n > 0 {
+	if err != nil {
 		return
 	}
-	log.Printf("seeding demo project %q...", cfg.DemoProject)
+	if n > 0 {
+		hasTags, err := store.HasSearchableTags(ctx, cfg.DemoProject)
+		if err != nil || hasTags {
+			return
+		}
+		log.Printf("demo project %q has legacy tagless data; adding tagged demo traces...", cfg.DemoProject)
+	} else {
+		log.Printf("seeding demo project %q...", cfg.DemoProject)
+	}
 	endpoint := fmt.Sprintf("http://127.0.0.1:%s/v1/traces", cfg.Port)
 	// Start seed in background after a short delay so HTTP is up.
 	go func() {
 		time.Sleep(2 * time.Second)
-		if err := seed.Demo(endpoint, cfg.DemoProject, 250); err != nil {
+		if err := seed.Demo(endpoint, cfg.DemoProject, 600); err != nil {
 			log.Printf("demo seed: %v", err)
 		} else {
 			log.Printf("demo seed complete")

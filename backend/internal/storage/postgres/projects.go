@@ -19,3 +19,12 @@ func (s *Store) SpanCount(ctx context.Context, project string) (int64, error) {
 	err := s.pool.QueryRow(ctx, `SELECT count(*) FROM spans WHERE project_id=$1`, orDefault(project)).Scan(&n)
 	return n, err
 }
+
+// HasSearchableTags reports whether a project has spans with attribute tags stored.
+func (s *Store) HasSearchableTags(ctx context.Context, project string) (bool, error) {
+	var n int64
+	err := s.pool.QueryRow(ctx,
+		`SELECT count(*) FROM spans WHERE project_id=$1 AND tags <> '{}'::jsonb`,
+		orDefault(project)).Scan(&n)
+	return n > 0, err
+}

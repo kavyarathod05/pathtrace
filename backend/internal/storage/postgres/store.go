@@ -8,6 +8,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -115,48 +116,86 @@ func (s *Store) Operations(ctx context.Context, project, service string) ([]stri
 
 // FindTraceIDs applies the search filters and returns matching trace IDs,
 // ordered by most recent, capped at the query limit.
+//
+// Filters use trace-level semantics: service/operation/duration/error must match
+// on the same span within a trace, while tags and time windows can be satisfied
+// by any span in that trace. This matches how distributed traces are explored
+// in practice (e.g. service=payments plus tag on the gateway span).
 func (s *Store) FindTraceIDs(ctx context.Context, q model.TraceQuery) ([]string, error) {
-	sb := &sqlBuilder{}
-	sb.where("project_id = %s", orDefault(q.ProjectID))
-	if q.Service != "" {
-		sb.where("service_name = %s", q.Service)
-	}
-	if q.Operation != "" {
-		sb.where("operation_name = %s", q.Operation)
-	}
-	if q.MinDuration > 0 {
-		sb.where("duration_us >= %s", q.MinDuration)
-	}
-	if q.MaxDuration > 0 {
-		sb.where("duration_us <= %s", q.MaxDuration)
-	}
-	if q.OnlyErrors {
-		sb.whereRaw("status_code = 'ERROR'")
-	}
-	if !q.Start.IsZero() {
-		sb.where("start_time >= %s", q.Start)
-	}
-	if !q.End.IsZero() {
-		sb.where("start_time <= %s", q.End)
-	}
-	for k, v := range q.Tags {
-		// JSONB containment: tags @> '{"key":"value"}'
-		tagJSON, _ := json.Marshal(map[string]string{k: v})
-		sb.where("tags @> %s", string(tagJSON))
-	}
+	project := orDefault(q.ProjectID)
 	limit := q.Limit
 	if limit <= 0 || limit > 200 {
 		limit = 20
 	}
+
+	args := []any{project}
+	placeholder := func(v any) string {
+		args = append(args, v)
+		return fmt.Sprintf("$%d", len(args))
+	}
+
+	var traceFilters []string
+
+	var scopeConds []string
+	if q.Service != "" {
+		scopeConds = append(scopeConds, fmt.Sprintf("service_name = %s", placeholder(q.Service)))
+	}
+	if q.Operation != "" {
+		scopeConds = append(scopeConds, fmt.Sprintf("operation_name = %s", placeholder(q.Operation)))
+	}
+	if q.MinDuration > 0 {
+		scopeConds = append(scopeConds, fmt.Sprintf("duration_us >= %s", placeholder(q.MinDuration)))
+	}
+	if q.MaxDuration > 0 {
+		scopeConds = append(scopeConds, fmt.Sprintf("duration_us <= %s", placeholder(q.MaxDuration)))
+	}
+	if q.OnlyErrors {
+		scopeConds = append(scopeConds, "status_code = 'ERROR'")
+	}
+	if len(scopeConds) > 0 {
+		traceFilters = append(traceFilters, fmt.Sprintf(
+			"trace_id IN (SELECT trace_id FROM spans WHERE project_id = $1 AND %s)",
+			strings.Join(scopeConds, " AND "),
+		))
+	}
+
+	for k, v := range q.Tags {
+		tagJSON, _ := json.Marshal(map[string]string{k: v})
+		ph := placeholder(string(tagJSON))
+		traceFilters = append(traceFilters, fmt.Sprintf(
+			"trace_id IN (SELECT trace_id FROM spans WHERE project_id = $1 AND tags @> %s::jsonb)",
+			ph,
+		))
+	}
+
+	var timeConds []string
+	if !q.Start.IsZero() {
+		timeConds = append(timeConds, fmt.Sprintf("start_time >= %s", placeholder(q.Start)))
+	}
+	if !q.End.IsZero() {
+		timeConds = append(timeConds, fmt.Sprintf("start_time <= %s", placeholder(q.End)))
+	}
+	if len(timeConds) > 0 {
+		traceFilters = append(traceFilters, fmt.Sprintf(
+			"trace_id IN (SELECT trace_id FROM spans WHERE project_id = $1 AND %s)",
+			strings.Join(timeConds, " AND "),
+		))
+	}
+
+	where := "WHERE project_id = $1"
+	if len(traceFilters) > 0 {
+		where += " AND " + strings.Join(traceFilters, " AND ")
+	}
+
 	query := fmt.Sprintf(`
 		SELECT trace_id, MAX(start_time) AS ts
 		FROM spans
 		%s
 		GROUP BY trace_id
 		ORDER BY ts DESC
-		LIMIT %d`, sb.clause(), limit)
+		LIMIT %d`, where, limit)
 
-	rows, err := s.pool.Query(ctx, query, sb.args...)
+	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

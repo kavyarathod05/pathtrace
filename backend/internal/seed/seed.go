@@ -17,7 +17,9 @@ import (
 func Demo(endpoint, project string, count int) error {
 	rng := mrand.New(mrand.NewSource(time.Now().UnixNano()))
 	for i := 0; i < count; i++ {
-		start := time.Now().Add(-time.Duration(rng.Int63n(int64(45 * time.Minute))))
+		// Spread start times across the last 24h, weighted toward "recent" so
+		// every UI time window (15m/1h/6h/24h) has enough samples to show.
+		start := time.Now().Add(-spreadAgo(rng, 24*time.Hour))
 		payload := buildTrace(rng, start, project)
 		body, _ := json.Marshal(payload)
 		req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
@@ -35,6 +37,14 @@ func Demo(endpoint, project string, count int) error {
 		}
 	}
 	return nil
+}
+
+// spreadAgo returns a duration in [0, window) biased toward smaller values
+// (recent). Using r*r keeps recent windows dense while still covering the full
+// range, so 15m/1h/6h/24h all contain traces.
+func spreadAgo(rng *mrand.Rand, window time.Duration) time.Duration {
+	r := rng.Float64()
+	return time.Duration(r * r * float64(window))
 }
 
 type opSpec struct {
@@ -139,17 +149,41 @@ func buildSpan(rng *mrand.Rand, traceID, parentID string, spec opSpec, start tim
 	end := start.Add(total)
 	isError := rng.Float64() < spec.errorRate
 	status := otlpStatus{Code: 0}
+	attrs := []otlpKeyValue{
+		kvStr("span.kind.name", kindName(spec.kind)),
+	}
+	if len(spec.operation) > 0 && (spec.operation[0] == 'P' || spec.operation[0] == 'G') {
+		attrs = append(attrs, kvStr("http.route", spec.operation))
+	}
 	if isError {
 		status = otlpStatus{Code: 2, Message: "operation failed"}
+		attrs = append(attrs,
+			kvStr("error.type", "UpstreamError"),
+			kvStr("exception.type", "PaymentDeclined"),
+		)
 	}
 	span := otlpSpan{
 		TraceID: traceID, SpanID: spanID, ParentSpanID: parentID, Name: spec.operation, Kind: spec.kind,
 		StartTimeUnixNano: fmt.Sprintf("%d", start.UnixNano()),
 		EndTimeUnixNano:   fmt.Sprintf("%d", end.UnixNano()),
+		Attributes:        attrs,
 		Status:            status,
 	}
 	out[spec.service] = append(out[spec.service], span)
 	return total
+}
+
+func kindName(k int) string {
+	switch k {
+	case 2:
+		return "server"
+	case 3:
+		return "client"
+	case 4:
+		return "producer"
+	default:
+		return "internal"
+	}
 }
 
 func randHex(n int) string {

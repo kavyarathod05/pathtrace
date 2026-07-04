@@ -29,6 +29,37 @@ function windowToStart(win: string): string {
   return new Date(now - (mult[win] ?? mult["1h"])).toISOString();
 }
 
+function formFromSearch(search: { get: (k: string) => string | null }): SearchParams {
+  const next: SearchParams = { limit: 40 };
+  const s = search.get("service");
+  const op = search.get("operation");
+  const minD = search.get("minDuration");
+  const maxD = search.get("maxDuration");
+  const tags = search.get("tags");
+  const q = search.get("q");
+  const errs = search.get("onlyErrors");
+  if (s) next.service = s;
+  if (op) next.operation = op;
+  if (minD) next.minDuration = minD;
+  if (maxD) next.maxDuration = maxD;
+  if (tags) next.tags = tags;
+  if (q) next.q = q;
+  if (errs === "true") next.onlyErrors = true;
+  return next;
+}
+
+function hasActiveFilters(form: SearchParams): boolean {
+  return !!(
+    form.service ||
+    form.operation ||
+    form.minDuration ||
+    form.maxDuration ||
+    form.tags ||
+    form.q ||
+    form.onlyErrors
+  );
+}
+
 function DurationScatter({ traces, maxDur, onPick }: { traces: TraceSummary[]; maxDur: number; onPick: (id: string) => void }) {
   if (traces.length === 0) return null;
   const ticks = [0, 0.25, 0.5, 0.75, 1];
@@ -72,44 +103,62 @@ function DurationScatter({ traces, maxDur, onPick }: { traces: TraceSummary[]; m
 }
 
 function TimeHistogram({ traces }: { traces: TraceSummary[] }) {
-  const bars = useMemo(() => {
-    if (traces.length === 0) return [];
+  const [hover, setHover] = useState<number | null>(null);
+  const { bars, min, bucketMs } = useMemo(() => {
+    if (traces.length === 0) return { bars: [] as { count: number; errors: number }[], min: 0, bucketMs: 0 };
     const times = traces.map((t) => new Date(t.startTime).getTime());
-    const min = Math.min(...times);
-    const max = Math.max(...times);
-    const span = Math.max(1, max - min);
+    const lo = Math.min(...times);
+    const hi = Math.max(...times);
+    const span = Math.max(1, hi - lo);
     const N = 32;
     const buckets = Array.from({ length: N }, () => ({ count: 0, errors: 0 }));
     for (const t of traces) {
-      const idx = Math.min(N - 1, Math.floor(((new Date(t.startTime).getTime() - min) / span) * N));
+      const idx = Math.min(N - 1, Math.floor(((new Date(t.startTime).getTime() - lo) / span) * N));
       buckets[idx].count++;
       if (t.errorCount > 0) buckets[idx].errors++;
     }
-    return buckets;
+    return { bars: buckets, min: lo, bucketMs: span / N };
   }, [traces]);
 
   if (bars.length === 0) return null;
   const max = Math.max(1, ...bars.map((b) => b.count));
+  const fmtClock = (ms: number) =>
+    new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
   return (
     <div className="panel" style={{ marginBottom: 16 }}>
       <div className="panel-title">
         <span>Traces over time</span>
-        <span className="hint">count per bucket · errors in red</span>
+        <span className="hint">count per bucket · errors in red · hover for details</span>
       </div>
       <div className="time-hist">
-        {bars.map((b, i) => (
-          <div
-            key={i}
-            className="hist-bar"
-            title={`${b.count} traces · ${b.errors} errors`}
-            style={{ height: `${(b.count / max) * 100}%` }}
-          >
-            {b.errors > 0 && (
-              <span className="hist-err" style={{ height: `${(b.errors / b.count) * 100}%` }} />
-            )}
-          </div>
-        ))}
+        {bars.map((b, i) => {
+          const from = min + i * bucketMs;
+          const to = from + bucketMs;
+          const rate = b.count > 0 ? Math.round((b.errors / b.count) * 100) : 0;
+          return (
+            <div
+              key={i}
+              className="hist-col"
+              onMouseEnter={() => setHover(i)}
+              onMouseLeave={() => setHover((h) => (h === i ? null : h))}
+            >
+              <div className="hist-bar" style={{ height: `${Math.max(b.count === 0 ? 0 : 3, (b.count / max) * 100)}%` }}>
+                {b.errors > 0 && (
+                  <span className="hist-err" style={{ height: `${(b.errors / b.count) * 100}%` }} />
+                )}
+              </div>
+              {hover === i && (
+                <div className={`hist-tip ${i > bars.length / 2 ? "left" : ""}`}>
+                  <div className="hist-tip-time">{fmtClock(from)} – {fmtClock(to)}</div>
+                  <div className="hist-tip-row"><span>Traces</span><strong>{b.count}</strong></div>
+                  <div className="hist-tip-row"><span>Errors</span><strong className={b.errors > 0 ? "err" : ""}>{b.errors}</strong></div>
+                  <div className="hist-tip-row"><span>Error rate</span><strong className={rate > 0 ? "err" : ""}>{rate}%</strong></div>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -121,8 +170,8 @@ function ExploreInner() {
   const { project } = useProject();
   const [services, setServices] = useState<string[]>([]);
   const [operations, setOperations] = useState<string[]>([]);
-  const [form, setForm] = useState<SearchParams>({ limit: 40 });
-  const [win, setWin] = useState("1h");
+  const [form, setForm] = useState<SearchParams>(() => formFromSearch(search));
+  const [win, setWin] = useState(() => search.get("window") ?? "1h");
   const [results, setResults] = useState<TraceSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -130,27 +179,11 @@ function ExploreInner() {
   const [views, setViews] = useState<SavedView[]>([]);
   const [viewName, setViewName] = useState("");
 
-  // Hydrate form from URL params once on mount / when the URL changes.
+  // Keep form/window in sync when the URL changes (back/forward, shared links).
   useEffect(() => {
-    const next: SearchParams = { limit: 40 };
-    const s = search.get("service");
-    const op = search.get("operation");
-    const minD = search.get("minDuration");
-    const maxD = search.get("maxDuration");
-    const tags = search.get("tags");
-    const q = search.get("q");
-    const errs = search.get("onlyErrors");
-    if (s) next.service = s;
-    if (op) next.operation = op;
-    if (minD) next.minDuration = minD;
-    if (maxD) next.maxDuration = maxD;
-    if (tags) next.tags = tags;
-    if (q) next.q = q;
-    if (errs === "true") next.onlyErrors = true;
+    setForm(formFromSearch(search));
     const w = search.get("window");
     if (w) setWin(w);
-    setForm(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
 
   useEffect(() => {
@@ -181,8 +214,7 @@ function ExploreInner() {
 
   useEffect(() => {
     run();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project]);
+  }, [run]);
 
   const syncUrl = () => {
     const url = exploreURL(form);
@@ -330,7 +362,16 @@ function ExploreInner() {
           {results.length === 0 && !loading ? (
             <div className="empty">
               <div className="big">No traces found</div>
-              Try the demo project or <Link href="/connect" className="link">connect your app</Link> to start sending spans.
+              {hasActiveFilters(form) ? (
+                <>
+                  No traces match the current filters in the selected time window.
+                  Try clearing the TraceQL query, tag filter, or duration bounds, or widen the time range.
+                </>
+              ) : (
+                <>
+                  Try the demo project or <Link href="/connect" className="link">connect your app</Link> to start sending spans.
+                </>
+              )}
             </div>
           ) : (
             <table>
