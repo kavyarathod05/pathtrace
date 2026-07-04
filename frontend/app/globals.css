@@ -361,6 +361,7 @@ td.num, th.num { text-align: right; font-family: var(--mono); font-variant-numer
   color: var(--text-faint); font-weight: 600; border-right: 1px solid var(--border);
   display: flex; align-items: center; justify-content: space-between;
 }
+.wf-head-label .hint { font-size: 10px; letter-spacing: normal; text-transform: none; font-weight: 450; max-width: 140px; text-align: right; }
 .wf-head-axis { position: relative; height: 34px; }
 .wf-tick { position: absolute; top: 0; bottom: 0; }
 .wf-tick .lbl {
@@ -417,8 +418,8 @@ td.num, th.num { text-align: right; font-family: var(--mono); font-variant-numer
   font-family: var(--mono); font-size: 11px; font-weight: 600;
   color: #fff; letter-spacing: 0.01em;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.65);
-  pointer-events: none; padding: 0 6px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  pointer-events: none; padding: 0 8px;
+  white-space: nowrap; overflow: visible;
 }
 .wf-dur-outside {
   position: absolute; top: 50%; transform: translateY(-50%);

@@ -214,7 +214,7 @@ function WaterfallRow({
               opacity: onCriticalPath ? 0.95 : 0.72,
             }}
           />
-          {barStyle.width >= 5 && (
+          {barStyle.width >= 10 && (
             <span className="wf-bar-label">{formatDuration(span.durationUs)}</span>
           )}
           <div className={`wf-bar-tip${depth < 2 ? " below" : ""}`} role="tooltip">
@@ -233,7 +233,7 @@ function WaterfallRow({
             </div>
           </div>
         </div>
-        {barStyle.width < 5 && (
+        {barStyle.width < 10 && (
           <span
             className="wf-dur-outside"
             style={{ left: `calc(${barStyle.left + barStyle.width}% + 6px)` }}
