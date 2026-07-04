@@ -83,3 +83,9 @@ func (r *Runner) bootstrapDemoIncidents(ctx context.Context, project string) err
 	}
 	return r.store.ReplaceIncidentEvents(ctx, id, buildTimeline(inc, inc.RootCause))
 }
+
+// EnsureDemoIncidents materializes sample incidents for the demo project when
+// telemetry exists but none are open yet.
+func (r *Runner) EnsureDemoIncidents(ctx context.Context, project string) error {
+	return r.bootstrapDemoIncidents(ctx, project)
+}

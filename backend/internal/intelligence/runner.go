@@ -36,15 +36,16 @@ func (r *Runner) RunProject(ctx context.Context, project string) error {
 	if err := r.store.RebuildServiceEdges(ctx, project, since); err != nil {
 		return fmt.Errorf("edges: %w", err)
 	}
-	if err := r.updateBaselines(ctx, project, since); err != nil {
-		return fmt.Errorf("baselines: %w", err)
-	}
 	if err := r.detectDeployments(ctx, project, since); err != nil {
 		return fmt.Errorf("deployments: %w", err)
 	}
+	// Detect against prior baselines before this run overwrites them.
 	incidents, err := r.detectIncidents(ctx, project, since)
 	if err != nil {
 		return fmt.Errorf("incidents: %w", err)
+	}
+	if err := r.updateBaselines(ctx, project, since); err != nil {
+		return fmt.Errorf("baselines: %w", err)
 	}
 	for _, inc := range incidents {
 		id, err := r.store.UpsertIncident(ctx, inc)

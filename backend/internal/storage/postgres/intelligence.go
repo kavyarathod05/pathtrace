@@ -129,26 +129,43 @@ func (s *Store) UpsertIncident(ctx context.Context, inc model.Incident) (int64, 
 	imp, _ := json.Marshal(inc.Impacted)
 	blast, _ := json.Marshal(inc.BlastRadius)
 	pb, _ := json.Marshal(inc.Playbook)
+	project := orDefault(inc.ProjectID)
 	var id int64
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO incidents (
-			project_id, title, status, severity, severity_label, primary_service,
-			root_cause, impacted, blast_radius, playbook, fingerprint, started_at, resolved_at, updated_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now())
-		ON CONFLICT (project_id, fingerprint) WHERE status = 'open'
-		DO UPDATE SET
-		  title = EXCLUDED.title,
-		  severity = EXCLUDED.severity,
-		  severity_label = EXCLUDED.severity_label,
-		  primary_service = EXCLUDED.primary_service,
-		  root_cause = EXCLUDED.root_cause,
-		  impacted = EXCLUDED.impacted,
-		  blast_radius = EXCLUDED.blast_radius,
-		  playbook = EXCLUDED.playbook,
-		  updated_at = now()
-		RETURNING id`,
-		orDefault(inc.ProjectID), inc.Title, inc.Status, inc.Severity, inc.SeverityLabel,
-		inc.PrimaryService, rc, imp, blast, pb, inc.Fingerprint, inc.StartedAt, inc.ResolvedAt).Scan(&id)
+		SELECT id FROM incidents
+		WHERE project_id = $1 AND fingerprint = $2 AND status = 'open'`,
+		project, inc.Fingerprint).Scan(&id)
+	if err != nil && err != pgx.ErrNoRows {
+		return 0, err
+	}
+	if err == pgx.ErrNoRows {
+		err = s.pool.QueryRow(ctx, `
+			INSERT INTO incidents (
+				project_id, title, status, severity, severity_label, primary_service,
+				root_cause, impacted, blast_radius, playbook, fingerprint, started_at, resolved_at, updated_at
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now())
+			RETURNING id`,
+			project, inc.Title, inc.Status, inc.Severity, inc.SeverityLabel,
+			inc.PrimaryService, rc, imp, blast, pb, inc.Fingerprint, inc.StartedAt, inc.ResolvedAt).Scan(&id)
+	} else {
+		err = s.pool.QueryRow(ctx, `
+			UPDATE incidents SET
+			  title = $3,
+			  severity = $4,
+			  severity_label = $5,
+			  primary_service = $6,
+			  root_cause = $7,
+			  impacted = $8,
+			  blast_radius = $9,
+			  playbook = $10,
+			  started_at = $11,
+			  resolved_at = $12,
+			  updated_at = now()
+			WHERE id = $1 AND project_id = $2
+			RETURNING id`,
+			id, project, inc.Title, inc.Severity, inc.SeverityLabel,
+			inc.PrimaryService, rc, imp, blast, pb, inc.StartedAt, inc.ResolvedAt).Scan(&id)
+	}
 	if err != nil {
 		return 0, err
 	}

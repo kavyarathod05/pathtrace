@@ -3,6 +3,7 @@ package query
 import (
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -26,7 +27,12 @@ func (a *API) handleIntelligenceOverview(w http.ResponseWriter, r *http.Request)
 	// Demo project: materialize incidents on first read when telemetry exists but
 	// the batch worker has not run yet (common after deploy or stale data).
 	if project == a.cfg.DemoProject && ov.ActiveIncidents == 0 {
-		_ = runner.RunProject(r.Context(), project)
+		if err := runner.EnsureDemoIncidents(r.Context(), project); err != nil {
+			log.Printf("demo ensure incidents: %v", err)
+		}
+		if err := runner.RunProject(r.Context(), project); err != nil {
+			log.Printf("demo intelligence run: %v", err)
+		}
 		if fresh, err := runner.Overview(r.Context(), project); err == nil {
 			ov = fresh
 		}
@@ -47,7 +53,13 @@ func (a *API) handleListIncidents(w http.ResponseWriter, r *http.Request) {
 		incidents = []model.Incident{}
 	}
 	if project == a.cfg.DemoProject && len(incidents) == 0 && status != "resolved" {
-		_ = a.intelRunner().RunProject(r.Context(), project)
+		runner := a.intelRunner()
+		if err := runner.EnsureDemoIncidents(r.Context(), project); err != nil {
+			log.Printf("demo ensure incidents: %v", err)
+		}
+		if err := runner.RunProject(r.Context(), project); err != nil {
+			log.Printf("demo intelligence run: %v", err)
+		}
 		incidents, _ = a.store.ListIncidents(r.Context(), project, status, limit)
 		if incidents == nil {
 			incidents = []model.Incident{}
