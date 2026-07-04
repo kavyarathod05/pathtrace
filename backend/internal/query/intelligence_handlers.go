@@ -16,24 +16,42 @@ func (a *API) intelRunner() *intelligence.Runner {
 }
 
 func (a *API) handleIntelligenceOverview(w http.ResponseWriter, r *http.Request) {
-	ov, err := a.intelRunner().Overview(r.Context(), a.project(r))
+	project := a.project(r)
+	runner := a.intelRunner()
+	ov, err := runner.Overview(r.Context(), project)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	// Demo project: materialize incidents on first read when telemetry exists but
+	// the batch worker has not run yet (common after deploy or stale data).
+	if project == a.cfg.DemoProject && ov.ActiveIncidents == 0 {
+		_ = runner.RunProject(r.Context(), project)
+		if fresh, err := runner.Overview(r.Context(), project); err == nil {
+			ov = fresh
+		}
 	}
 	writeJSON(w, http.StatusOK, ov)
 }
 
 func (a *API) handleListIncidents(w http.ResponseWriter, r *http.Request) {
+	project := a.project(r)
 	status := r.URL.Query().Get("status")
 	limit := atoiDefault(r.URL.Query().Get("limit"), 50)
-	incidents, err := a.store.ListIncidents(r.Context(), a.project(r), status, limit)
+	incidents, err := a.store.ListIncidents(r.Context(), project, status, limit)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if incidents == nil {
 		incidents = []model.Incident{}
+	}
+	if project == a.cfg.DemoProject && len(incidents) == 0 && status != "resolved" {
+		_ = a.intelRunner().RunProject(r.Context(), project)
+		incidents, _ = a.store.ListIncidents(r.Context(), project, status, limit)
+		if incidents == nil {
+			incidents = []model.Incident{}
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"incidents": incidents})
 }

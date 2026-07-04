@@ -152,6 +152,7 @@ func runMaintenance(ctx context.Context, cfg config.Config, store *postgres.Stor
 		}
 	}
 
+	sweep() // run once at startup so demo incidents appear without waiting for the first tick
 	for {
 		select {
 		case <-ctx.Done():
