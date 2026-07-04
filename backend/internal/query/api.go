@@ -632,8 +632,17 @@ func (a *API) handleLiveTail(w http.ResponseWriter, r *http.Request) {
 	ch, unsubscribe := a.hub.Subscribe()
 	defer unsubscribe()
 
+	project := a.project(r)
+	demoMode := project == a.cfg.DemoProject && a.cfg.AutoSeedDemo
+	if demoMode {
+		w.Header().Set("X-PathTrace-Live-Mode", "demo")
+	}
+
 	// Initial comment to open the stream promptly.
 	_, _ = w.Write([]byte(": connected\n\n"))
+	if demoMode {
+		_, _ = w.Write([]byte(": demo-replay\n\n"))
+	}
 	flusher.Flush()
 
 	keepalive := time.NewTicker(15 * time.Second)
@@ -651,8 +660,11 @@ func (a *API) handleLiveTail(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return
 			}
+			if project != "" && sp.ProjectID != "" && sp.ProjectID != project {
+				continue
+			}
 			_, _ = w.Write([]byte("data: "))
-			_ = enc.Encode(sp) // Encode writes a trailing newline.
+			_ = enc.Encode(sp)
 			_, _ = w.Write([]byte("\n"))
 			flusher.Flush()
 		}

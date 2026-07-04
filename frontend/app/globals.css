@@ -568,6 +568,16 @@ td.num, th.num { text-align: right; font-family: var(--mono); font-variant-numer
 .live-pill { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; color: var(--text-dim); padding: 4px 10px; border-radius: var(--radius-pill); border: 1px solid var(--border-strong); background: var(--bg-panel-2); }
 .live-pill .beat { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); animation: pulse 1.6s ease-in-out infinite; }
 .live-pill.off .beat { background: var(--text-faint); animation: none; }
+
+.demo-badge {
+  display: inline-block; font-size: 10px; font-weight: 600; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--accent-hi); background: var(--accent-bg);
+  border: 1px solid var(--accent); border-radius: var(--radius-pill); padding: 2px 8px;
+}
+.note-banner {
+  padding: 10px 14px; border-radius: var(--radius); border: 1px solid var(--border);
+  background: var(--bg-panel-2); color: var(--text-dim); font-size: 13px; line-height: 1.45;
+}
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
 
 .section-label { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-faint); margin: 0 0 10px; font-weight: 600; }

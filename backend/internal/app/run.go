@@ -57,6 +57,10 @@ func Run(ctx context.Context, cfg config.Config) error {
 	writer := ingest.NewWriter(store, sampler, hub, cfg.BatchSize, 2*time.Second)
 	defer writer.Close()
 
+	if cfg.QueryEnabled() && cfg.AutoSeedDemo && cfg.DemoProject != "" {
+		livetail.StartDemoFeed(ctx, hub, store, cfg.DemoProject)
+	}
+
 	var bridge *queue.Bridge
 	if cfg.RedisURL != "" {
 		bridge, err = queue.NewBridge(cfg.RedisURL)

@@ -289,6 +289,24 @@ func scanSpan(rows pgx.Rows) (model.Span, error) {
 	); err != nil {
 		return sp, err
 	}
+	return finishSpan(&sp, parent, kind, statusCode, statusMsg, tags, events, refs), nil
+}
+
+func scanSpanProject(rows pgx.Rows) (model.Span, error) {
+	var sp model.Span
+	var parent, kind, statusCode, statusMsg *string
+	var tags, events, refs []byte
+	if err := rows.Scan(
+		&sp.ProjectID, &sp.TraceID, &sp.SpanID, &parent, &sp.ServiceName, &sp.OperationName,
+		&kind, &sp.StartTime, &sp.DurationUS, &statusCode, &statusMsg,
+		&tags, &events, &refs,
+	); err != nil {
+		return sp, err
+	}
+	return finishSpan(&sp, parent, kind, statusCode, statusMsg, tags, events, refs), nil
+}
+
+func finishSpan(sp *model.Span, parent, kind, statusCode, statusMsg *string, tags, events, refs []byte) model.Span {
 	sp.ParentSpanID = deref(parent)
 	sp.Kind = deref(kind)
 	sp.StatusCode = deref(statusCode)
@@ -299,7 +317,7 @@ func scanSpan(rows pgx.Rows) (model.Span, error) {
 	if sp.Tags == nil {
 		sp.Tags = map[string]any{}
 	}
-	return sp, nil
+	return *sp
 }
 
 func summarize(traceID string, spans []model.Span) model.TraceSummary {
