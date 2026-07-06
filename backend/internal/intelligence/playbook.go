@@ -73,13 +73,13 @@ func buildTimeline(inc model.Incident, rc model.RootCause) []model.IncidentEvent
 			OccurredAt: now,
 		})
 	}
-	for _, t := range rc.EvidenceTraceIDs {
+	if len(rc.EvidenceTraceIDs) > 0 {
 		events = append(events, model.IncidentEvent{
 			IncidentID: inc.ID,
 			EventType:  "evidence",
 			Service:    inc.PrimaryService,
-			Summary:    "Evidence trace captured",
-			Evidence:   map[string]any{"traceId": t},
+			Summary:    fmt.Sprintf("%d evidence trace(s) captured for analysis", len(rc.EvidenceTraceIDs)),
+			Evidence:   map[string]any{"traceIds": rc.EvidenceTraceIDs},
 			OccurredAt: now,
 		})
 	}
@@ -101,11 +101,7 @@ func (r *Runner) Overview(ctx context.Context, project string) (model.Intelligen
 		insight = fmt.Sprintf("%d active incident(s) detected — investigate primary service impact", open)
 		if len(recent) > 0 {
 			topImpacted = recent[0].PrimaryService
-			if recent[0].RootCause.Hypothesis != "" {
-				insight = recent[0].RootCause.Hypothesis
-			} else {
-				insight = fmt.Sprintf("%s — %s", recent[0].Title, recent[0].PrimaryService)
-			}
+			insight = fmt.Sprintf("%d open incident(s) affecting %s — review details below", open, topImpacted)
 		}
 	}
 	if critical > 0 {

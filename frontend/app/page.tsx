@@ -2,22 +2,51 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { fetchIntelligenceOverview } from "@/lib/api";
+import {
+  fetchDependencies,
+  fetchHotspots,
+  fetchIntelligenceOverview,
+  fetchServiceHealth,
+} from "@/lib/api";
 import { useProject } from "@/lib/project";
+import { useTimeWindow } from "@/lib/time-context";
 import { PageHeader } from "@/components/shell/PageHeader";
 import { IncidentCard, InsightBanner, StatusPill } from "@/components/intelligence/IncidentUI";
-import type { IntelligenceOverview } from "@/lib/types";
+import { DependencySummary, HotspotList, ServiceHealthGrid } from "@/components/intelligence/OverviewPanels";
+import type { DependencyEdge, Hotspot, IntelligenceOverview, ServiceHealth } from "@/lib/types";
 
 export default function HomePage() {
   const { project } = useProject();
+  const { window, refreshKey } = useTimeWindow();
   const [data, setData] = useState<IntelligenceOverview | null>(null);
+  const [health, setHealth] = useState<ServiceHealth[]>([]);
+  const [edges, setEdges] = useState<DependencyEdge[]>([]);
+  const [hotspots, setHotspots] = useState<Hotspot[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchIntelligenceOverview(project)
-      .then(setData)
-      .catch((e) => setError(String(e)));
-  }, [project]);
+    let active = true;
+    setError(null);
+    Promise.all([
+      fetchIntelligenceOverview(project),
+      fetchServiceHealth(project, window),
+      fetchDependencies(project, window),
+      fetchHotspots(project, window),
+    ])
+      .then(([overview, svc, deps, hot]) => {
+        if (!active) return;
+        setData(overview);
+        setHealth(svc);
+        setEdges(deps);
+        setHotspots(hot);
+      })
+      .catch((e) => active && setError(String(e)));
+    return () => {
+      active = false;
+    };
+  }, [project, window, refreshKey]);
+
+  const hasIncidents = (data?.recentIncidents?.length ?? 0) > 0;
 
   return (
     <>
@@ -36,37 +65,51 @@ export default function HomePage() {
               actions={
                 data.activeIncidents > 0 ? (
                   <Link href="/incidents" className="btn sm">
-                    View {data.activeIncidents} incident{data.activeIncidents !== 1 ? "s" : ""}
+                    View all incidents
                   </Link>
                 ) : (
                   <Link href="/connect" className="btn ghost sm">Connect your app</Link>
                 )
               }
             />
-            <div className="auto-grid" style={{ "--col-min": "200px" } as React.CSSProperties}>
-              <div className="intel-card">
+
+            <div className="overview-metrics">
+              <div className="intel-card overview-metric">
                 <div className="hint">Active incidents</div>
-                <div style={{ fontSize: 28, fontWeight: 700, color: "var(--text)" }}>{data.activeIncidents}</div>
+                <div className="overview-metric__value">{data.activeIncidents}</div>
               </div>
-              <div className="intel-card">
+              <div className="intel-card overview-metric">
                 <div className="hint">Critical</div>
-                <div style={{ fontSize: 28, fontWeight: 700, color: "var(--err)" }}>{data.criticalIncidents}</div>
+                <div className="overview-metric__value overview-metric__value--err">{data.criticalIncidents}</div>
               </div>
-              <div className="intel-card">
+              <div className="intel-card overview-metric">
                 <div className="hint">Top impacted</div>
-                <div style={{ fontSize: 16, fontWeight: 600 }}>{data.topImpactedService || "—"}</div>
+                <div className="overview-metric__label">{data.topImpactedService || "—"}</div>
+              </div>
+              <div className="intel-card overview-metric">
+                <div className="hint">Services monitored</div>
+                <div className="overview-metric__value">{health.length || "—"}</div>
               </div>
             </div>
-            {data.recentIncidents && data.recentIncidents.length > 0 && (
-              <>
+
+            {hasIncidents && (
+              <section className="overview-section">
                 <div className="section-label">Open incidents</div>
                 <div className="stack">
-                  {data.recentIncidents.map((inc) => (
+                  {data.recentIncidents!.map((inc) => (
                     <IncidentCard key={inc.id} incident={inc} />
                   ))}
                 </div>
-              </>
+              </section>
             )}
+
+            <div className="overview-grid">
+              <ServiceHealthGrid services={health} />
+              <div className="overview-grid__side stack">
+                <DependencySummary edges={edges} />
+                <HotspotList hotspots={hotspots} project={project} />
+              </div>
+            </div>
           </>
         )}
         {!data && !error && <div className="empty"><div className="big">Loading system overview…</div></div>}

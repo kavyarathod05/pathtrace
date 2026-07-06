@@ -1,6 +1,7 @@
 "use client";
 
-import type { Incident } from "@/lib/types";
+import Link from "next/link";
+import type { Incident, IncidentEvent } from "@/lib/types";
 
 export function SeverityBadge({ label, score }: { label: string; score?: number }) {
   const cls = label === "critical" ? "critical" : label === "warning" ? "warning" : "info";
@@ -12,28 +13,48 @@ export function SeverityBadge({ label, score }: { label: string; score?: number 
   );
 }
 
-export function IncidentCard({ incident }: { incident: Incident }) {
+function timeAgo(iso: string) {
+  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  return `${hrs}h ago`;
+}
+
+export function IncidentCard({ incident, compact }: { incident: Incident; compact?: boolean }) {
   const sevClass =
     incident.severityLabel === "critical"
       ? "intel-card--critical"
       : incident.severityLabel === "warning"
         ? "intel-card--warning"
         : "intel-card--info";
+  const impacted = incident.impacted?.length ?? incident.blastRadius?.filter((b) => b.hop > 0).length ?? 0;
+  const evidence = incident.rootCause?.evidenceTraceIds?.length ?? 0;
+
   return (
-    <a href={`/incidents/${incident.id}`} className={`intel-card incident-card ${sevClass}`}>
+    <Link href={`/incidents/${incident.id}`} className={`intel-card incident-card ${sevClass}`}>
       <div className="incident-card__head">
         <h3 className="incident-card__title">{incident.title}</h3>
         <SeverityBadge label={incident.severityLabel} score={incident.severity} />
       </div>
       <div className="incident-card__meta">
-        {incident.primaryService} · {new Date(incident.startedAt).toLocaleString()}
+        <span>{incident.primaryService}</span>
+        <span className="incident-card__dot">·</span>
+        <span className={`incident-card__status incident-card__status--${incident.status}`}>{incident.status}</span>
+        <span className="incident-card__dot">·</span>
+        <span>{timeAgo(incident.startedAt)}</span>
       </div>
-      {incident.rootCause?.hypothesis && (
-        <p className="hint" style={{ margin: "8px 0 0", lineHeight: 1.45 }}>
-          {incident.rootCause.hypothesis}
-        </p>
+      {!compact && incident.rootCause?.hypothesis && (
+        <p className="incident-card__hypothesis">{incident.rootCause.hypothesis}</p>
       )}
-    </a>
+      {!compact && (
+        <div className="incident-card__stats">
+          {impacted > 0 && <span>{impacted} downstream</span>}
+          {evidence > 0 && <span>{evidence} evidence traces</span>}
+          {incident.playbook?.length > 0 && <span>{incident.playbook.length} playbook steps</span>}
+        </div>
+      )}
+    </Link>
   );
 }
 
@@ -68,12 +89,19 @@ export function RootCausePanel({ rootCause }: { rootCause: Incident["rootCause"]
         Root cause hypothesis
         <span className="hint">{Math.round((rootCause.confidence ?? 0) * 100)}% confidence</span>
       </div>
-      <p style={{ margin: "0 0 12px", fontSize: 14, lineHeight: 1.5 }}>{rootCause.hypothesis}</p>
-      {rootCause.reasoning?.map((r) => (
-        <div key={r} className="hint" style={{ marginBottom: 4 }}>
-          • {r}
-        </div>
-      ))}
+      <p className="rca-hypothesis">{rootCause.hypothesis}</p>
+      {(rootCause.reasoning?.length ?? 0) > 0 && (
+        <ul className="rca-reasoning">
+          {rootCause.reasoning!.map((r) => (
+            <li key={r}>{r}</li>
+          ))}
+        </ul>
+      )}
+      {rootCause.bottleneckOperation && (
+        <p className="hint" style={{ marginTop: 10 }}>
+          Bottleneck operation: <strong>{rootCause.bottleneckOperation}</strong> on {rootCause.bottleneckService}
+        </p>
+      )}
     </div>
   );
 }
@@ -95,21 +123,40 @@ export function PlaybookList({ steps }: { steps: Incident["playbook"] }) {
   );
 }
 
-export function TimelineList({ events }: { events: { eventType: string; summary: string; occurredAt: string; service?: string }[] }) {
+const EVENT_LABELS: Record<string, string> = {
+  incident_opened: "Incident opened",
+  root_cause: "Root cause identified",
+  evidence: "Evidence collected",
+};
+
+export function TimelineList({ events }: { events: IncidentEvent[] }) {
   return (
     <div className="timeline-list">
-      {events.map((e, i) => {
+      {events.map((e) => {
         const typeCls =
           e.eventType.includes("deploy") ? "timeline-event--deploy"
           : e.eventType.includes("error") || e.eventType.includes("failure") ? "timeline-event--failure"
           : e.eventType.includes("spike") || e.eventType.includes("latency") ? "timeline-event--spike"
+          : e.eventType === "root_cause" ? "timeline-event--rca"
+          : e.eventType === "evidence" ? "timeline-event--evidence"
           : "";
+        const traceIds = (e.evidence?.traceIds as string[] | undefined) ?? (
+          e.evidence?.traceId ? [String(e.evidence.traceId)] : []
+        );
         return (
-          <div key={i} className={`timeline-event ${typeCls}`}>
+          <div key={e.id ?? `${e.eventType}-${e.occurredAt}-${e.summary}`} className={`timeline-event ${typeCls}`}>
             <div className="timeline-event__time">{new Date(e.occurredAt).toLocaleString()}</div>
-            <div>
-              <div style={{ fontWeight: 600, fontSize: 13 }}>{e.summary}</div>
+            <div className="timeline-event__body">
+              <div className="timeline-event__type">{EVENT_LABELS[e.eventType] ?? e.eventType}</div>
+              <div className="timeline-event__summary">{e.summary}</div>
               {e.service && <div className="hint">{e.service}</div>}
+              {traceIds.length > 0 && (
+                <div className="timeline-event__traces">
+                  {traceIds.map((id) => (
+                    <code key={id} className="timeline-trace-id">{id.slice(0, 12)}…</code>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         );
@@ -142,13 +189,51 @@ export function EvidenceTraceList({ traceIds, project }: { traceIds: string[]; p
   if (!traceIds?.length) return null;
   return (
     <div className="intel-card">
-      <div className="panel-title" style={{ marginBottom: 10 }}>Evidence traces</div>
-      <div className="stack">
+      <div className="panel-title" style={{ marginBottom: 10 }}>
+        Evidence traces
+        <span className="hint">{traceIds.length} samples</span>
+      </div>
+      <div className="evidence-trace-grid">
         {traceIds.map((id) => (
-          <a key={id} href={`/traces/${id}?project=${encodeURIComponent(project)}`} className="link mono">
-            {id.slice(0, 16)}…
-          </a>
+          <Link key={id} href={`/traces/${id}?project=${encodeURIComponent(project)}`} className="evidence-trace-link">
+            <span className="mono">{id.slice(0, 20)}…</span>
+            <span className="hint">Open trace</span>
+          </Link>
         ))}
+      </div>
+    </div>
+  );
+}
+
+export function IncidentSummaryStrip({ incident }: { incident: Incident }) {
+  const impacted = incident.impacted?.length ?? 0;
+  const blast = incident.blastRadius?.length ?? 0;
+  const evidence = incident.rootCause?.evidenceTraceIds?.length ?? 0;
+  return (
+    <div className="summary-strip">
+      <div className="summary-strip__item">
+        <span className="hint">Primary service</span>
+        <strong>{incident.primaryService}</strong>
+      </div>
+      <div className="summary-strip__item">
+        <span className="hint">Status</span>
+        <strong>{incident.status}</strong>
+      </div>
+      <div className="summary-strip__item">
+        <span className="hint">Started</span>
+        <strong>{new Date(incident.startedAt).toLocaleString()}</strong>
+      </div>
+      <div className="summary-strip__item">
+        <span className="hint">Blast radius</span>
+        <strong>{blast} services</strong>
+      </div>
+      <div className="summary-strip__item">
+        <span className="hint">Downstream</span>
+        <strong>{impacted}</strong>
+      </div>
+      <div className="summary-strip__item">
+        <span className="hint">Evidence</span>
+        <strong>{evidence} traces</strong>
       </div>
     </div>
   );

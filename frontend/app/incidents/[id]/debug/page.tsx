@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { fetchIncident } from "@/lib/api";
 import { useProject } from "@/lib/project";
 import { PageHeader } from "@/components/shell/PageHeader";
-import { PlaybookList, RootCausePanel } from "@/components/intelligence/IncidentUI";
+import { PlaybookList } from "@/components/intelligence/IncidentUI";
 import type { Incident } from "@/lib/types";
 
 export default function DebugPage() {
@@ -24,11 +24,7 @@ export default function DebugPage() {
     <>
       <PageHeader title="Debug Assistant" subtitle="Ranked investigation steps" />
       <div className="page-body stack">
-        <RootCausePanel rootCause={incident.rootCause} />
-        <div className="intel-card">
-          <div className="panel-title" style={{ marginBottom: 12 }}>Recommended actions</div>
-          <PlaybookList steps={incident.playbook} />
-        </div>
+        <PlaybookList steps={incident.playbook} />
       </div>
     </>
   );

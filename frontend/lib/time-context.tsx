@@ -22,6 +22,8 @@ export type TimeWindow = (typeof TIME_WINDOWS)[number]["value"];
 const DEFAULT_WINDOW: TimeWindow = "1h";
 
 const TIME_AWARE_PATHS = [
+  "/",
+  "/incidents",
   "/explore",
   "/monitor",
   "/health",

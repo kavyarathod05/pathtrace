@@ -3,12 +3,14 @@
 import { useEffect, useState } from "react";
 import { fetchIncidents } from "@/lib/api";
 import { useProject } from "@/lib/project";
+import { useTimeWindow } from "@/lib/time-context";
 import { PageHeader } from "@/components/shell/PageHeader";
 import { IncidentCard } from "@/components/intelligence/IncidentUI";
 import type { Incident } from "@/lib/types";
 
 export default function IncidentsPage() {
   const { project } = useProject();
+  const { refreshKey } = useTimeWindow();
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [filter, setFilter] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -17,7 +19,7 @@ export default function IncidentsPage() {
     fetchIncidents(project, filter || undefined)
       .then(setIncidents)
       .catch((e) => setError(String(e)));
-  }, [project, filter]);
+  }, [project, filter, refreshKey]);
 
   return (
     <>

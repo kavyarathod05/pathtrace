@@ -7,22 +7,14 @@ import { fetchIncident, fetchIncidentTimeline, resolveIncident } from "@/lib/api
 import { useProject } from "@/lib/project";
 import { PageHeader } from "@/components/shell/PageHeader";
 import {
-  DependencyChain,
   EvidenceTraceList,
+  IncidentSummaryStrip,
   PlaybookList,
   RootCausePanel,
   SeverityBadge,
   TimelineList,
 } from "@/components/intelligence/IncidentUI";
 import type { Incident, IncidentEvent } from "@/lib/types";
-
-const TABS = [
-  { href: "", label: "Overview" },
-  { href: "/rca", label: "Root Cause" },
-  { href: "/timeline", label: "Timeline" },
-  { href: "/blast-radius", label: "Blast Radius" },
-  { href: "/debug", label: "Debug Assistant" },
-];
 
 export default function IncidentDetailPage() {
   const params = useParams();
@@ -49,6 +41,8 @@ export default function IncidentDetailPage() {
   if (error) return <div className="page-body err-note">{error}</div>;
   if (!incident) return <div className="page-body empty"><div className="big">Loading incident…</div></div>;
 
+  const previewEvents = events.slice(0, 4);
+
   return (
     <>
       <PageHeader
@@ -64,26 +58,9 @@ export default function IncidentDetailPage() {
         }
       />
       <div className="page-body stack">
-        <nav className="cluster" style={{ marginBottom: 8 }}>
-          {TABS.map((t) => (
-            <Link key={t.href} href={`/incidents/${id}${t.href}`} className="btn sm ghost">
-              {t.label}
-            </Link>
-          ))}
-        </nav>
+        <IncidentSummaryStrip incident={incident} />
         <RootCausePanel rootCause={incident.rootCause} />
-        <DependencyChain primary={incident.primaryService} bottleneck={incident.rootCause?.bottleneckService} />
-        {events.length > 0 && (
-          <div className="intel-card">
-            <div className="panel-title" style={{ marginBottom: 10 }}>Timeline</div>
-            <TimelineList events={events} />
-          </div>
-        )}
-        <EvidenceTraceList traceIds={incident.rootCause?.evidenceTraceIds ?? []} project={project} />
-        <div className="intel-card">
-          <div className="panel-title" style={{ marginBottom: 10 }}>Suggested fixes</div>
-          <PlaybookList steps={incident.playbook} />
-        </div>
+
         {incident.impacted?.length > 0 && (
           <div className="intel-card">
             <div className="panel-title" style={{ marginBottom: 10 }}>Impacted services</div>
@@ -92,9 +69,34 @@ export default function IncidentDetailPage() {
                 <div key={s.service} className="scorecard">
                   <div className="svc">{s.service}</div>
                   <div className="hint">severity {s.severity}</div>
+                  {s.errorRate != null && s.errorRate > 0 && (
+                    <div className="hint">{(s.errorRate * 100).toFixed(1)}% errors</div>
+                  )}
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {previewEvents.length > 0 && (
+          <div className="intel-card">
+            <div className="panel-title panel-title--split">
+              <span>Recent timeline</span>
+              <Link href={`/incidents/${id}/timeline`} className="btn ghost sm">View full timeline</Link>
+            </div>
+            <TimelineList events={previewEvents} />
+          </div>
+        )}
+
+        <EvidenceTraceList traceIds={incident.rootCause?.evidenceTraceIds ?? []} project={project} />
+
+        {incident.playbook?.length > 0 && (
+          <div className="intel-card">
+            <div className="panel-title panel-title--split">
+              <span>Suggested fixes</span>
+              <Link href={`/incidents/${id}/debug`} className="btn ghost sm">Open debug assistant</Link>
+            </div>
+            <PlaybookList steps={incident.playbook.slice(0, 3)} />
           </div>
         )}
       </div>

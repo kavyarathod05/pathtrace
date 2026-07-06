@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { API_BASE } from "@/lib/api";
-import { useProject } from "@/lib/project";
 import { ProjectSelector } from "@/components/ProjectSelector";
 
 function Icon({ path, box = "0 0 24 24" }: { path: ReactNode; box?: string }) {
@@ -24,30 +23,43 @@ const ICONS: Record<string, ReactNode> = {
   blast: <><circle cx="12" cy="12" r="3" /><path d="M12 3v3M12 18v3M3 12h3M18 12h3" /></>,
   debug: <><path d="M12 3a4 4 0 014 4v2h2v8H6V9h2V7a4 4 0 014-4z" /></>,
   alerts: <><path d="M12 4a5 5 0 015 5v4l2 3H5l2-3V9a5 5 0 015-5z" /><path d="M10 20a2 2 0 004 0" /></>,
+  traces: <><path d="M4 6h16M4 12h16M4 18h10" /></>,
 };
 
-const NAV: { section: string; items: { href: string; label: string; icon: string }[] }[] = [
+const NAV: { section: string; items: { href: string; label: string; icon: string; match?: "exact" | "prefix" }[] }[] = [
   {
     section: "Intelligence",
     items: [
-      { href: "/", label: "System Overview", icon: "home" },
-      { href: "/incidents", label: "Incidents", icon: "incidents" },
+      { href: "/", label: "System Overview", icon: "home", match: "exact" },
+      { href: "/incidents", label: "Incidents", icon: "incidents", match: "prefix" },
+    ],
+  },
+  {
+    section: "Evidence",
+    items: [
+      { href: "/explore", label: "Trace Explorer", icon: "traces", match: "prefix" },
     ],
   },
   {
     section: "Configure",
     items: [
-      { href: "/connect", label: "Connect", icon: "connect" },
-      { href: "/alerts", label: "Alerts", icon: "alerts" },
+      { href: "/connect", label: "Connect", icon: "connect", match: "prefix" },
+      { href: "/alerts", label: "Alerts", icon: "alerts", match: "prefix" },
     ],
   },
 ];
 
+const INCIDENT_TABS = [
+  { suffix: "", label: "Overview", icon: "incidents" },
+  { suffix: "/rca", label: "Root Cause", icon: "rca" },
+  { suffix: "/timeline", label: "Timeline", icon: "timeline" },
+  { suffix: "/blast-radius", label: "Blast Radius", icon: "blast" },
+  { suffix: "/debug", label: "Debug Assistant", icon: "debug" },
+] as const;
+
 export function Nav() {
   const pathname = usePathname();
-  const { project } = useProject();
   const [up, setUp] = useState<boolean | null>(null);
-  const showProject = pathname !== "/" && pathname !== "/connect";
 
   useEffect(() => {
     let active = true;
@@ -64,19 +76,24 @@ export function Nav() {
     };
   }, []);
 
-  const isActive = (href: string) =>
-    href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/");
+  const isActive = (href: string, match: "exact" | "prefix" = "prefix") => {
+    if (href === "/") return pathname === "/";
+    if (match === "exact") return pathname === href;
+    if (pathname === href) return true;
+    if (href === "/incidents" && pathname.match(/^\/incidents\/\d+/)) return true;
+    return pathname.startsWith(href + "/");
+  };
 
-  const incidentSub =
-    pathname.match(/^\/incidents\/(\d+)/)?.[1] != null
-      ? [
-          { href: `/incidents/${pathname.match(/^\/incidents\/(\d+)/)![1]}`, label: "Detail", icon: "incidents" },
-          { href: `/incidents/${pathname.match(/^\/incidents\/(\d+)/)![1]}/rca`, label: "Root Cause", icon: "rca" },
-          { href: `/incidents/${pathname.match(/^\/incidents\/(\d+)/)![1]}/timeline`, label: "Timeline", icon: "timeline" },
-          { href: `/incidents/${pathname.match(/^\/incidents\/(\d+)/)![1]}/blast-radius`, label: "Blast Radius", icon: "blast" },
-          { href: `/incidents/${pathname.match(/^\/incidents\/(\d+)/)![1]}/debug`, label: "Debug Assistant", icon: "debug" },
-        ]
-      : null;
+  const incidentMatch = pathname.match(/^\/incidents\/(\d+)(\/.*)?$/);
+  const incidentId = incidentMatch?.[1];
+  const incidentPath = incidentId ? `/incidents/${incidentId}` : null;
+
+  const incidentTabActive = (suffix: string) => {
+    if (!incidentPath) return false;
+    const full = `${incidentPath}${suffix}`;
+    if (suffix === "") return pathname === incidentPath;
+    return pathname === full || pathname.startsWith(full + "/");
+  };
 
   return (
     <nav className="nav">
@@ -93,27 +110,36 @@ export function Nav() {
         </div>
       </Link>
 
-      {showProject && <ProjectSelector />}
+      <ProjectSelector />
 
       <div className="nav-scroll">
         {NAV.map((group) => (
           <div key={group.section}>
             <div className="nav-section">{group.section}</div>
             {group.items.map((l) => (
-              <Link key={l.href} href={l.href} className={`nav-link${isActive(l.href) ? " active" : ""}`}>
+              <Link
+                key={l.href}
+                href={l.href}
+                className={`nav-link${isActive(l.href, l.match ?? "prefix") ? " active" : ""}`}
+              >
                 <Icon path={ICONS[l.icon]} />
                 {l.label}
               </Link>
             ))}
           </div>
         ))}
-        {incidentSub && (
-          <div>
-            <div className="nav-section">Incident</div>
-            {incidentSub.map((l) => (
-              <Link key={l.href} href={l.href} className={`nav-link${pathname === l.href ? " active" : ""}`}>
-                <Icon path={ICONS[l.icon]} />
-                {l.label}
+
+        {incidentPath && (
+          <div className="nav-incident-group">
+            <div className="nav-section">Incident #{incidentId}</div>
+            {INCIDENT_TABS.map((tab) => (
+              <Link
+                key={tab.suffix}
+                href={`${incidentPath}${tab.suffix}`}
+                className={`nav-link nav-link--sub${incidentTabActive(tab.suffix) ? " active" : ""}`}
+              >
+                <Icon path={ICONS[tab.icon]} />
+                {tab.label}
               </Link>
             ))}
           </div>
