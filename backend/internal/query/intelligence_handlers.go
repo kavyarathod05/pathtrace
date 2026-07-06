@@ -126,10 +126,12 @@ func (a *API) handleIncidentDebug(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"playbook":  inc.Playbook,
-		"rootCause": inc.RootCause,
-	})
+	ctx, err := a.intelRunner().DebugContext(r.Context(), a.project(r), *inc)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, ctx)
 }
 
 func (a *API) handleResolveIncident(w http.ResponseWriter, r *http.Request) {

@@ -8,50 +8,6 @@ import (
 	"github.com/pathtrace/pathtrace/internal/model"
 )
 
-func generatePlaybook(inc model.Incident, rc model.RootCause) []model.PlaybookStep {
-	var steps []model.PlaybookStep
-	priority := 1
-	if rc.BottleneckOperation != "" {
-		steps = append(steps, model.PlaybookStep{
-			Priority:  priority,
-			Action:    fmt.Sprintf("Check error logs for %s on %s", rc.BottleneckOperation, rc.BottleneckService),
-			Rationale: "Highest error concentration identified by trace analysis",
-		})
-		priority++
-	}
-	if inc.SeverityLabel == "critical" || inc.Severity >= 70 {
-		steps = append(steps, model.PlaybookStep{
-			Priority:  priority,
-			Action:    fmt.Sprintf("Verify %s health endpoint and recent deployments", inc.PrimaryService),
-			Rationale: "Critical severity — check for recent changes first",
-		})
-		priority++
-	}
-	if rc.BottleneckService != "" && rc.BottleneckService != inc.PrimaryService {
-		steps = append(steps, model.PlaybookStep{
-			Priority:  priority,
-			Action:    fmt.Sprintf("Inspect dependency %s connection pool / timeouts", rc.BottleneckService),
-			Rationale: "Latency injection point identified upstream",
-		})
-		priority++
-	}
-	if len(rc.EvidenceTraceIDs) > 0 {
-		steps = append(steps, model.PlaybookStep{
-			Priority:  priority,
-			Action:    fmt.Sprintf("Review %d evidence traces for common failure pattern", len(rc.EvidenceTraceIDs)),
-			Rationale: "Sample traces contain correlated errors",
-		})
-	}
-	if len(steps) == 0 {
-		steps = append(steps, model.PlaybookStep{
-			Priority:  1,
-			Action:    fmt.Sprintf("Check metrics and logs for %s", inc.PrimaryService),
-			Rationale: "Default investigation step",
-		})
-	}
-	return steps
-}
-
 func buildTimeline(inc model.Incident, rc model.RootCause) []model.IncidentEvent {
 	now := time.Now()
 	events := []model.IncidentEvent{

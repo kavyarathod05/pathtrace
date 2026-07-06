@@ -77,7 +77,7 @@ func (r *Runner) bootstrapDemoIncidents(ctx context.Context, project string) err
 	blast := r.computeBlast(ctx, project, inc)
 	inc.BlastRadius = blast
 	inc.Impacted = impactedFromBlast(blast, inc.PrimaryService, inc.Severity)
-	inc.Playbook = generatePlaybook(inc, inc.RootCause)
+	inc.Playbook = generatePlaybook(inc, inc.RootCause, project)
 	if _, err := r.store.UpsertIncident(ctx, inc); err != nil {
 		return err
 	}

@@ -11,6 +11,7 @@ import type {
   Incident,
   IncidentEvent,
   IntelligenceOverview,
+  DebugContext,
   NotificationChannel,
   REDSeries,
   SavedView,
@@ -222,6 +223,10 @@ export async function fetchIncidentTimeline(project: string, id: number): Promis
 
 export async function fetchIncidentBlast(project: string, id: number): Promise<{ blastRadius: BlastRadiusEntry[]; edges: DependencyEdge[] }> {
   return getJSON(`/api/incidents/${id}/blast-radius${qs(project)}`);
+}
+
+export async function fetchIncidentDebug(project: string, id: number): Promise<DebugContext> {
+  return getJSON<DebugContext>(`/api/incidents/${id}/debug${qs(project)}`);
 }
 
 export async function resolveIncident(project: string, id: number): Promise<void> {

@@ -238,6 +238,30 @@ type PlaybookStep struct {
 	Priority  int    `json:"priority"`
 	Action    string `json:"action"`
 	Rationale string `json:"rationale,omitempty"`
+	Kind      string `json:"kind,omitempty"` // manual | trace | explore | link
+	Href      string `json:"href,omitempty"`
+	TraceID   string `json:"traceId,omitempty"`
+	Service   string `json:"service,omitempty"`
+	Operation string `json:"operation,omitempty"`
+}
+
+// DebugContext is the full investigation workspace for an incident.
+type DebugContext struct {
+	IncidentID     int64              `json:"incidentId"`
+	Title          string             `json:"title"`
+	PrimaryService string             `json:"primaryService"`
+	Severity       int                `json:"severity"`
+	SeverityLabel  string             `json:"severityLabel"`
+	Status         string             `json:"status"`
+	Hypothesis     string             `json:"hypothesis"`
+	Confidence     float64            `json:"confidence"`
+	Playbook       []PlaybookStep     `json:"playbook"`
+	Evidence       []TraceSummary     `json:"evidence"`
+	Hotspots       []Hotspot          `json:"hotspots"`
+	Deployments    []Deployment       `json:"deployments"`
+	ServiceHealth  *ServiceHealth     `json:"serviceHealth,omitempty"`
+	Impacted       []ImpactedService  `json:"impacted"`
+	BlastRadius    []BlastRadiusEntry `json:"blastRadius"`
 }
 
 // Incident is a materialized intelligence entity.

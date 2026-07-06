@@ -2,29 +2,40 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { fetchIncident } from "@/lib/api";
+import { fetchIncidentDebug } from "@/lib/api";
 import { useProject } from "@/lib/project";
 import { PageHeader } from "@/components/shell/PageHeader";
-import { PlaybookList } from "@/components/intelligence/IncidentUI";
-import type { Incident } from "@/lib/types";
+import { DebugAssistant } from "@/components/intelligence/DebugAssistant";
+import { SeverityBadge } from "@/components/intelligence/IncidentUI";
+import type { DebugContext } from "@/lib/types";
 
 export default function DebugPage() {
   const params = useParams();
   const id = Number(params.id);
   const { project } = useProject();
-  const [incident, setIncident] = useState<Incident | null>(null);
+  const [data, setData] = useState<DebugContext | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchIncident(project, id).then(setIncident);
+    if (!id) return;
+    setError(null);
+    fetchIncidentDebug(project, id)
+      .then(setData)
+      .catch((e) => setError(String(e)));
   }, [project, id]);
 
-  if (!incident) return <div className="page-body empty"><div className="big">Loading…</div></div>;
+  if (error) return <div className="page-body err-note">{error}</div>;
+  if (!data) return <div className="page-body empty"><div className="big">Loading debug assistant…</div></div>;
 
   return (
     <>
-      <PageHeader title="Debug Assistant" subtitle="Ranked investigation steps" />
-      <div className="page-body stack">
-        <PlaybookList steps={incident.playbook} />
+      <PageHeader
+        title="Debug Assistant"
+        subtitle={`Guided investigation for ${data.primaryService}`}
+        actions={<SeverityBadge label={data.severityLabel} score={data.severity} />}
+      />
+      <div className="page-body">
+        <DebugAssistant data={data} project={project} />
       </div>
     </>
   );

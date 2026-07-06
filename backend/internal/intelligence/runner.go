@@ -58,7 +58,7 @@ func (r *Runner) RunProject(ctx context.Context, project string) error {
 		blast := r.computeBlast(ctx, project, inc)
 		inc.BlastRadius = blast
 		inc.Impacted = impactedFromBlast(blast, inc.PrimaryService, inc.Severity)
-		inc.Playbook = generatePlaybook(inc, rc)
+		inc.Playbook = generatePlaybook(inc, rc, project)
 		if _, err := r.store.UpsertIncident(ctx, inc); err != nil {
 			return fmt.Errorf("update incident: %w", err)
 		}

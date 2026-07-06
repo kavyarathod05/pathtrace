@@ -215,6 +215,38 @@ export interface PlaybookStep {
   priority: number;
   action: string;
   rationale?: string;
+  kind?: "manual" | "trace" | "explore" | "link";
+  href?: string;
+  traceId?: string;
+  service?: string;
+  operation?: string;
+}
+
+export interface DebugContext {
+  incidentId: number;
+  title: string;
+  primaryService: string;
+  severity: number;
+  severityLabel: string;
+  status: string;
+  hypothesis: string;
+  confidence: number;
+  playbook: PlaybookStep[];
+  evidence: TraceSummary[];
+  hotspots: Hotspot[];
+  deployments: Deployment[];
+  serviceHealth?: ServiceHealth;
+  impacted: ImpactedService[];
+  blastRadius: BlastRadiusEntry[];
+}
+
+export interface Deployment {
+  id: number;
+  projectId: string;
+  service: string;
+  version?: string;
+  changeType: string;
+  deployedAt: string;
 }
 
 export interface Incident {
