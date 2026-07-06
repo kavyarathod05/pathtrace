@@ -12,6 +12,7 @@ import type {
   IncidentEvent,
   IntelligenceOverview,
   DebugContext,
+  Documentation,
   NotificationChannel,
   REDSeries,
   SavedView,
@@ -227,6 +228,10 @@ export async function fetchIncidentBlast(project: string, id: number): Promise<{
 
 export async function fetchIncidentDebug(project: string, id: number): Promise<DebugContext> {
   return getJSON<DebugContext>(`/api/incidents/${id}/debug${qs(project)}`);
+}
+
+export async function fetchDocumentation(): Promise<Documentation> {
+  return getJSON<Documentation>("/api/docs");
 }
 
 export async function resolveIncident(project: string, id: number): Promise<void> {

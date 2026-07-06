@@ -24,6 +24,7 @@ const ICONS: Record<string, ReactNode> = {
   debug: <><path d="M12 3a4 4 0 014 4v2h2v8H6V9h2V7a4 4 0 014-4z" /></>,
   alerts: <><path d="M12 4a5 5 0 015 5v4l2 3H5l2-3V9a5 5 0 015-5z" /><path d="M10 20a2 2 0 004 0" /></>,
   traces: <><path d="M4 6h16M4 12h16M4 18h10" /></>,
+  docs: <><path d="M6 4h10l4 4v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2z" /><path d="M14 4v4h4M8 12h8M8 16h6" /></>,
 };
 
 const NAV: { section: string; items: { href: string; label: string; icon: string; match?: "exact" | "prefix" }[] }[] = [
@@ -45,6 +46,7 @@ const NAV: { section: string; items: { href: string; label: string; icon: string
     items: [
       { href: "/connect", label: "Connect", icon: "connect", match: "prefix" },
       { href: "/alerts", label: "Alerts", icon: "alerts", match: "prefix" },
+      { href: "/docs", label: "Documentation", icon: "docs", match: "prefix" },
     ],
   },
 ];

@@ -5,6 +5,7 @@ package query
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -13,6 +14,7 @@ import (
 	"github.com/pathtrace/pathtrace/internal/analytics"
 	"github.com/pathtrace/pathtrace/internal/alerts"
 	"github.com/pathtrace/pathtrace/internal/config"
+	"github.com/pathtrace/pathtrace/internal/docs"
 	"github.com/pathtrace/pathtrace/internal/ingest"
 	"github.com/pathtrace/pathtrace/internal/livetail"
 	"github.com/pathtrace/pathtrace/internal/metrics"
@@ -44,6 +46,10 @@ func (a *API) Handler() http.Handler {
 
 	mux.HandleFunc("GET /healthz", a.handleHealth)
 	mux.Handle("GET /metrics", metrics.Handler())
+
+	feURL, apiURL := a.docURLs()
+	mux.HandleFunc("GET /api/docs", docs.HandlerJSON(feURL, apiURL))
+	mux.HandleFunc("GET /docs", docs.HandlerHTML(feURL, apiURL))
 
 	if a.cfg.IngestEnabled() {
 		mux.HandleFunc("POST /v1/traces", a.handleIngest)
@@ -123,6 +129,18 @@ func (a *API) project(r *http.Request) string {
 		return a.cfg.DemoProject
 	}
 	return "default"
+}
+
+func (a *API) docURLs() (frontend, api string) {
+	api = a.cfg.PublicURL
+	if api == "" {
+		api = fmt.Sprintf("http://localhost:%s", a.cfg.Port)
+	}
+	frontend = a.cfg.CORSOrigin
+	if frontend == "*" {
+		frontend = ""
+	}
+	return frontend, api
 }
 
 func parseWindow(r *http.Request, def time.Duration) time.Duration {

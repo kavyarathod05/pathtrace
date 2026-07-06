@@ -140,6 +140,8 @@ DATABASE_URL="postgres://pathtrace:pathtrace@localhost:55432/pathtrace?sslmode=d
 See [implementation.md](implementation.md) for the full deployment guide and
 free-tier notes.
 
+**Documentation:** `GET /docs` (HTML) and `GET /api/docs` (JSON) on the API server, or open `/docs` in the UI.
+
 ---
 
 ## Project layout

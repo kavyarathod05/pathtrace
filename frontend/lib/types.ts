@@ -285,3 +285,47 @@ export interface IntelligenceOverview {
   insight: string;
   recentIncidents?: Incident[];
 }
+
+export interface DocParam {
+  name: string;
+  type?: string;
+  required?: boolean;
+  description: string;
+}
+
+export interface DocEndpoint {
+  method: string;
+  path: string;
+  summary: string;
+  description?: string;
+  params?: DocParam[];
+  example?: string;
+}
+
+export interface DocEndpointGroup {
+  title: string;
+  endpoints: DocEndpoint[];
+}
+
+export interface DocSection {
+  id: string;
+  title: string;
+  content: string;
+}
+
+export interface DocUIRoute {
+  path: string;
+  title: string;
+  description: string;
+}
+
+export interface Documentation {
+  title: string;
+  version: string;
+  tagline: string;
+  links: { frontend?: string; api?: string; repo?: string };
+  sections: DocSection[];
+  endpoints: DocEndpointGroup[];
+  uiRoutes: DocUIRoute[];
+  envVars: DocParam[];
+}
